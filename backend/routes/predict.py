@@ -1,6 +1,7 @@
 """Prediction endpoint for emotion detection."""
 from datetime import datetime, timezone
 from collections import Counter, defaultdict, deque
+import logging
 from flask import Blueprint, request, jsonify
 import numpy as np
 import cv2
@@ -11,6 +12,7 @@ from utils.db import insert_emotion, student_exists
 from socketio_instance import socketio
 
 predict_bp = Blueprint("predict", __name__)
+logger = logging.getLogger(__name__)
 
 EMOTION_CLASSES = ["Engaged", "Confused", "Bored", "Distracted", "Neutral"]
 CONFIDENCE_THRESHOLD = 0.6
@@ -61,6 +63,7 @@ def majority_vote(student_id: int, emotion: str) -> str:
 def predict_emotion():
     """Predict emotion from an uploaded image."""
     try:
+        logger.info("/predict called")
         student_id_raw = request.form.get("student_id") or (request.json or {}).get("student_id") or "1"
         try:
             student_id = int(student_id_raw)
@@ -72,15 +75,18 @@ def predict_emotion():
             if "image" in request.files:
                 image_bytes = request.files["image"].read()
                 image = decode_image_bytes(image_bytes)
-            elif request.json and "image_base64" in request.json:
-                image = decode_base64_image(request.json["image_base64"])
+            elif request.json and ("image_base64" in request.json or "image" in request.json):
+                image_base64 = request.json.get("image_base64") or request.json.get("image")
+                image = decode_base64_image(image_base64)
             else:
                 return jsonify({"error": "No image provided."}), 400
         except Exception as exc:
+            logger.warning("Invalid image payload: %s", exc)
             return jsonify({"error": "Invalid image payload", "details": str(exc)}), 400
 
         face_bgr = crop_face(image)
         if face_bgr is None:
+            logger.info("No face detected for student_id=%s", student_id)
             return jsonify({
                 "student_id": student_id,
                 "emotion": "No Face",
@@ -105,6 +111,7 @@ def predict_emotion():
         except Exception as exc:  # pragma: no cover - defensive fallback
             pretrained_result = None
             pretrained_warning = f"pretrained inference failed: {str(exc)}"
+            logger.warning("Pretrained FER inference failed: %s", exc)
 
         if pretrained_result is not None:
             emotion, confidence, predictions_map, raw_probabilities = pretrained_result
@@ -120,6 +127,7 @@ def predict_emotion():
                 emotion = raw_emotion
                 predictions_map = {cls: float(prob) for cls, prob in zip(EMOTION_CLASSES, predictions[0])}
             except Exception as exc:
+                logger.warning("Custom model inference unavailable: %s", exc)
                 return jsonify({
                     "student_id": student_id,
                     "emotion": "Unavailable",
@@ -156,6 +164,7 @@ def predict_emotion():
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
         )
+        logger.info("Emotion emitted student_id=%s emotion=%s confidence=%.3f", student_id, emotion, confidence)
 
         response = {
             "student_id": student_id,
@@ -171,6 +180,8 @@ def predict_emotion():
 
         return jsonify(response)
     except FileNotFoundError as exc:
+        logger.exception("Model file not found during prediction: %s", exc)
         return jsonify({"error": str(exc)}), 500
     except Exception as exc:  # pragma: no cover - defensive error handling
+        logger.exception("Prediction failed: %s", exc)
         return jsonify({"error": "Prediction failed", "details": str(exc)}), 500

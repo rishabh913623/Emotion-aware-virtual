@@ -1,7 +1,7 @@
 """Flask application entry point for Emotion Aware Virtual Classroom."""
 import os
 import logging
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -45,6 +45,14 @@ def create_app() -> Flask:
 
     preload_report = preload_models()
     logger.info("Model preload status: %s", preload_report)
+
+    @socketio.on("connect")
+    def on_socket_connect():
+        logger.info("AI socket connected sid=%s origin=%s", request.sid, request.headers.get("Origin"))
+
+    @socketio.on("disconnect")
+    def on_socket_disconnect():
+        logger.info("AI socket disconnected sid=%s", request.sid)
 
     @app.route("/health", methods=["GET"])
     def health_check():

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { aiClient } from "../api/client";
 
-const CAPTURE_MS = 15000;
+const CAPTURE_MS = 3000;
 
 export const useEmotionCapture = ({ enabled, userId, videoRef }) => {
   const [currentEmotion, setCurrentEmotion] = useState("Waiting");
@@ -11,13 +11,14 @@ export const useEmotionCapture = ({ enabled, userId, videoRef }) => {
   const canvas = useMemo(() => document.createElement("canvas"), []);
 
   useEffect(() => {
-    if (!enabled || !videoRef.current || !userId) {
+    if (!enabled || !userId) {
       return undefined;
     }
 
     const capture = () => {
       const video = videoRef.current;
       if (!video?.videoWidth || !video?.videoHeight) {
+        console.log("[emotion] video not ready, skipping frame capture");
         return;
       }
       canvas.width = video.videoWidth;
@@ -42,6 +43,7 @@ export const useEmotionCapture = ({ enabled, userId, videoRef }) => {
           });
 
           const emotion = response.data?.emotion || "Unknown";
+          console.log("[emotion] predict response", response.data);
           setCurrentEmotion(emotion);
           setHistory((prev) => [
             {
@@ -54,6 +56,7 @@ export const useEmotionCapture = ({ enabled, userId, videoRef }) => {
           setError("");
         } catch (apiError) {
           const message = apiError?.response?.data?.error || apiError?.response?.data?.message || "Emotion capture failed";
+          console.error("[emotion] predict error", apiError?.response?.data || apiError);
           setError(message);
         }
       }, "image/jpeg");

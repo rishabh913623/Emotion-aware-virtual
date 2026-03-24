@@ -8,15 +8,32 @@ const normalizeAuthPayload = (payload) => {
     return null;
   }
 
+  const resolveUserId = (value) => {
+    if (value === null || value === undefined || value === "") {
+      return null;
+    }
+    const numeric = Number(value);
+    return Number.isNaN(numeric) ? value : numeric;
+  };
+
   if (payload.user) {
-    return payload;
+    const userId = resolveUserId(
+      payload.user.id ?? payload.user.user_id ?? payload.user.student_id ?? payload.id ?? payload.userId
+    );
+    return {
+      token: payload.token,
+      user: {
+        ...payload.user,
+        id: userId
+      }
+    };
   }
 
   if (payload.role) {
     return {
       token: payload.token,
       user: {
-        id: payload.student_id ?? null,
+        id: resolveUserId(payload.id ?? payload.user_id ?? payload.student_id ?? payload.userId),
         name: payload.username ?? "User",
         email: payload.email ?? "",
         role: payload.role

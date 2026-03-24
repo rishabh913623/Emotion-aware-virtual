@@ -31,7 +31,7 @@ services:
     plan: free
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
+    startCommand: gunicorn -k eventlet -w 1 app:app
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION

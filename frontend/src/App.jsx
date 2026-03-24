@@ -8,7 +8,7 @@ import DashboardPage from "./pages/DashboardPage";
 
 const ProtectedRoute = ({ children }) => {
   const { auth } = useAuth();
-  if (!auth?.token || !auth?.user) {
+  if (!auth?.token || !auth?.user || auth.user.id === null || auth.user.id === undefined) {
     return <Navigate to="/auth" replace />;
   }
   return children;

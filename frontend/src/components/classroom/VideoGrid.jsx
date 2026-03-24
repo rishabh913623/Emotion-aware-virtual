@@ -6,6 +6,7 @@ const RemoteVideo = ({ stream, label }) => {
   React.useEffect(() => {
     if (ref.current && stream) {
       ref.current.srcObject = stream;
+      ref.current.play().catch(() => {});
     }
   }, [stream]);
 
@@ -24,12 +25,31 @@ const RemoteVideo = ({ stream, label }) => {
 };
 
 const VideoGrid = ({ localVideoRef, remoteStreams, participants, selfName, selfSocketId }) => {
-  const remoteParticipants = participants.filter((participant) => participant.socketId !== selfSocketId);
+  const participantMap = new Map(
+    participants
+      .filter((participant) => participant.socketId !== selfSocketId)
+      .map((participant) => [participant.socketId, participant])
+  );
+
+  Object.keys(remoteStreams).forEach((socketId) => {
+    if (socketId !== selfSocketId && !participantMap.has(socketId)) {
+      participantMap.set(socketId, { socketId, name: `Participant ${socketId.slice(0, 4)}` });
+    }
+  });
+
+  const remoteParticipants = Array.from(participantMap.values());
 
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
       <div className="rounded-xl bg-blue-950 p-2">
-        <video ref={localVideoRef} autoPlay muted playsInline className="h-40 w-full rounded-lg object-cover" />
+        <video
+          ref={localVideoRef}
+          autoPlay
+          muted
+          playsInline
+          className="h-40 w-full rounded-lg object-cover"
+          onLoadedMetadata={(event) => event.currentTarget.play().catch(() => {})}
+        />
         <p className="mt-2 text-xs text-blue-100">{selfName} (You)</p>
       </div>
 

@@ -7,6 +7,14 @@ import {
   updateParticipant
 } from "./roomStore.js";
 
+const logSocket = (socket, message, meta = {}) => {
+  console.log(`[socket] ${message}`, {
+    socketId: socket.id,
+    userId: socket.user?.id,
+    ...meta
+  });
+};
+
 const socketAuth = (socket, next) => {
   try {
     const token = socket.handshake.auth?.token;
@@ -24,7 +32,26 @@ export const registerSocketHandlers = (io) => {
   io.use(socketAuth);
 
   io.on("connection", (socket) => {
-    socket.on("room:join", ({ roomId }) => {
+    logSocket(socket, "connected");
+
+    const joinRoom = ({ roomId }) => {
+      if (!roomId) {
+        logSocket(socket, "join-room rejected: missing roomId");
+        socket.emit("room:error", { error: "roomId is required" });
+        return;
+      }
+
+      const previous = findParticipantBySocket(socket.id);
+      if (previous && previous.roomId !== roomId) {
+        socket.leave(previous.roomId);
+        removeParticipant(previous.roomId, socket.id);
+        io.to(previous.roomId).emit("room:participants", getParticipants(previous.roomId));
+        io.to(previous.roomId).emit("room:user-left", {
+          socketId: socket.id,
+          userId: previous.participant.userId
+        });
+      }
+
       const existingParticipants = getParticipants(roomId);
       socket.join(roomId);
 
@@ -39,32 +66,56 @@ export const registerSocketHandlers = (io) => {
       };
 
       addParticipant(roomId, participant);
+      logSocket(socket, "joined room", {
+        roomId,
+        existingCount: existingParticipants.length
+      });
 
       socket.emit("room:participants", existingParticipants);
+      socket.to(roomId).emit("user-connected", participant);
       socket.to(roomId).emit("room:user-joined", participant);
       io.to(roomId).emit("room:participants", getParticipants(roomId));
-    });
+    };
 
-    socket.on("signal:offer", ({ targetSocketId, sdp }) => {
+    socket.on("join-room", joinRoom);
+    socket.on("room:join", joinRoom);
+
+    const forwardOffer = ({ targetSocketId, sdp }) => {
+      logSocket(socket, "offer", { targetSocketId });
       io.to(targetSocketId).emit("signal:offer", {
         fromSocketId: socket.id,
         sdp
       });
-    });
+    };
 
-    socket.on("signal:answer", ({ targetSocketId, sdp }) => {
+    socket.on("signal:offer", forwardOffer);
+    socket.on("offer", ({ targetSocketId, offer }) =>
+      forwardOffer({ targetSocketId, sdp: offer })
+    );
+
+    const forwardAnswer = ({ targetSocketId, sdp }) => {
+      logSocket(socket, "answer", { targetSocketId });
       io.to(targetSocketId).emit("signal:answer", {
         fromSocketId: socket.id,
         sdp
       });
-    });
+    };
 
-    socket.on("signal:ice-candidate", ({ targetSocketId, candidate }) => {
+    socket.on("signal:answer", forwardAnswer);
+    socket.on("answer", ({ targetSocketId, answer }) =>
+      forwardAnswer({ targetSocketId, sdp: answer })
+    );
+
+    const forwardIce = ({ targetSocketId, candidate }) => {
+      logSocket(socket, "ice-candidate", { targetSocketId });
       io.to(targetSocketId).emit("signal:ice-candidate", {
         fromSocketId: socket.id,
         candidate
       });
-    });
+    };
+
+    socket.on("signal:ice-candidate", forwardIce);
+    socket.on("ice-candidate", forwardIce);
 
     socket.on("chat:message", ({ roomId, message }) => {
       io.to(roomId).emit("chat:message", {
@@ -98,8 +149,10 @@ export const registerSocketHandlers = (io) => {
     socket.on("disconnect", () => {
       const found = findParticipantBySocket(socket.id);
       if (!found) {
+        logSocket(socket, "disconnected (not in room)");
         return;
       }
+      logSocket(socket, "disconnected", { roomId: found.roomId });
       removeParticipant(found.roomId, socket.id);
       socket.to(found.roomId).emit("room:user-left", {
         socketId: socket.id,

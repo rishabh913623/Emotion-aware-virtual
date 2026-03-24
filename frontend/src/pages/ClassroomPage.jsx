@@ -42,9 +42,21 @@ const ClassroomPage = () => {
       return undefined;
     }
 
+    const onSocketAuthError = (error) => {
+      const message = error?.message || "Socket connection failed";
+      console.error("[socket] connect_error", message);
+      if (message.includes("Invalid socket token") || message.includes("Missing socket token")) {
+        alert("Session expired. Please login again.");
+        logout();
+        navigate("/auth");
+      }
+    };
+
     socket.on("chat:message", (message) => {
       setMessages((prev) => [...prev, message]);
     });
+
+    socket.on("connect_error", onSocketAuthError);
 
     socket.on("room:removed", () => {
       setActiveRoomId("");
@@ -56,9 +68,10 @@ const ClassroomPage = () => {
     });
 
     return () => {
+      socket.off("connect_error", onSocketAuthError);
       socket.disconnect();
     };
-  }, [socket]);
+  }, [socket, logout, navigate]);
 
   const { localVideoRef, participants, remoteStreams, toggleAudio, toggleVideo, shareScreen } = useWebRTC({
     socket,
