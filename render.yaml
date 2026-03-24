@@ -1,0 +1,50 @@
+databases:
+  - name: emotion-db
+    plan: free
+    databaseName: emotion_db
+    user: emotion_user
+
+services:
+  - type: web
+    name: emotion-signaling
+    env: node
+    plan: free
+    rootDir: signaling-server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: emotion-db
+          property: connectionString
+
+  - type: web
+    name: emotion-ai-backend
+    env: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: MODEL_PATH
+        value: ../model/emotion_model.h5
+      - key: JWT_SECRET
+        generateValue: true
+      - key: TF_INTRA_THREADS
+        value: "1"
+      - key: TF_INTER_THREADS
+        value: "1"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: emotion-db
+          property: connectionString
