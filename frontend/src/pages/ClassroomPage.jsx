@@ -201,6 +201,7 @@ const ClassroomPage = () => {
               remoteStreams={remoteStreams}
               participants={participants}
               selfName={currentUser.name}
+              selfSocketId={socket?.id}
             />
             <ControlsBar
               audioEnabled={audioEnabled}

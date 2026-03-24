@@ -44,14 +44,20 @@ def crop_face(image_bgr: np.ndarray) -> np.ndarray | None:
     return image_bgr[y : y + h, x : x + w]
 
 
+def tensorize_face(face_bgr: np.ndarray) -> np.ndarray:
+    """Convert cropped face into model-ready tensor (1, 48, 48, 1)."""
+    gray = cv2.cvtColor(face_bgr, cv2.COLOR_BGR2GRAY)
+    resized = cv2.resize(gray, (48, 48))
+    normalized = resized.astype("float32") / 255.0
+    tensor = np.expand_dims(normalized, axis=(0, -1))
+    return tensor
+
+
 def preprocess_for_model(image_bgr: np.ndarray) -> tuple[np.ndarray | None, bool]:
     """Convert BGR image to model-ready tensor (1, 48, 48, 1)."""
     face_bgr = crop_face(image_bgr)
     if face_bgr is None:
         return None, False
 
-    gray = cv2.cvtColor(face_bgr, cv2.COLOR_BGR2GRAY)
-    resized = cv2.resize(gray, (48, 48))
-    normalized = resized.astype("float32") / 255.0
-    tensor = np.expand_dims(normalized, axis=(0, -1))
+    tensor = tensorize_face(face_bgr)
     return tensor, True

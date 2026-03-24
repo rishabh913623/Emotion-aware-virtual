@@ -11,7 +11,7 @@ export const useEmotionCapture = ({ enabled, userId, videoRef }) => {
   const canvas = useMemo(() => document.createElement("canvas"), []);
 
   useEffect(() => {
-    if (!enabled || !videoRef.current) {
+    if (!enabled || !videoRef.current || !userId) {
       return undefined;
     }
 
@@ -53,7 +53,8 @@ export const useEmotionCapture = ({ enabled, userId, videoRef }) => {
           ].slice(0, 20));
           setError("");
         } catch (apiError) {
-          setError("Emotion capture failed");
+          const message = apiError?.response?.data?.error || apiError?.response?.data?.message || "Emotion capture failed";
+          setError(message);
         }
       }, "image/jpeg");
     };

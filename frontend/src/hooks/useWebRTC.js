@@ -116,7 +116,10 @@ export const useWebRTC = ({ socket, roomId, enabled }) => {
       }
       setParticipants(list);
       list.forEach((participant) => {
-        if (participant.socketId !== socket.id) {
+        if (
+          participant.socketId !== socket.id &&
+          !peerConnectionsRef.current.has(participant.socketId)
+        ) {
           createOffer(participant.socketId);
         }
       });
@@ -130,8 +133,11 @@ export const useWebRTC = ({ socket, roomId, enabled }) => {
         }
         return [...prev, participant];
       });
+
       if (participant.socketId !== socket.id) {
-        createOffer(participant.socketId);
+        createOffer(participant.socketId).catch((error) => {
+          console.error("Failed to create offer for joined participant", error);
+        });
       }
     });
 

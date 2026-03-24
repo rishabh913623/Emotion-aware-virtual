@@ -32,6 +32,15 @@ def insert_emotion(student_id: int, emotion: str, confidence: float) -> None:
             cursor.execute(query, (student_id, emotion, confidence))
 
 
+def student_exists(student_id: int) -> bool:
+    """Return whether a user row exists for the given student id."""
+    query = "SELECT 1 FROM users WHERE id = %s LIMIT 1"
+    with get_db_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query, (student_id,))
+            return cursor.fetchone() is not None
+
+
 def fetch_emotions(limit: int = 200) -> List[Dict[str, Any]]:
     """Fetch recent emotions for dashboard."""
     query = """

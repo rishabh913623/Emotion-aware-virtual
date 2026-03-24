@@ -6,12 +6,16 @@ const AI_URL = import.meta.env.VITE_AI_API_URL || "http://localhost:5001";
 export const createSignalingSocket = (token) => {
   return io(SIGNALING_URL, {
     auth: { token },
-    transports: ["websocket", "polling"]
+    reconnection: true,
+    reconnectionAttempts: 5,
+    timeout: 10000
   });
 };
 
 export const createAiSocket = () => {
   return io(AI_URL, {
-    transports: ["websocket", "polling"]
+    reconnection: true,
+    reconnectionAttempts: 5,
+    timeout: 10000
   });
 };

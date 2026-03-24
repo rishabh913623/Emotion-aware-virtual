@@ -8,3 +8,4 @@ numpy==1.26.4
 Flask-SocketIO==5.3.6
 python-socketio==5.11.2
 PyJWT==2.8.0
+fer==22.5.1

@@ -25,6 +25,7 @@ export const registerSocketHandlers = (io) => {
 
   io.on("connection", (socket) => {
     socket.on("room:join", ({ roomId }) => {
+      const existingParticipants = getParticipants(roomId);
       socket.join(roomId);
 
       const participant = {
@@ -38,10 +39,10 @@ export const registerSocketHandlers = (io) => {
       };
 
       addParticipant(roomId, participant);
-      const participants = getParticipants(roomId);
 
-      socket.emit("room:participants", participants);
+      socket.emit("room:participants", existingParticipants);
       socket.to(roomId).emit("room:user-joined", participant);
+      io.to(roomId).emit("room:participants", getParticipants(roomId));
     });
 
     socket.on("signal:offer", ({ targetSocketId, sdp }) => {
