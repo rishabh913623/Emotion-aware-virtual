@@ -1,0 +1,26 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Node
+node_modules/
+frontend/node_modules/
+signaling-server/node_modules/
+
+# Build outputs
+frontend/dist/
+
+# Environment files
+.env
+*.env.local
+signaling-server/.env
+frontend/.env
+backend/.env
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
