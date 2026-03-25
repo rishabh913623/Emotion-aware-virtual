@@ -14,16 +14,23 @@ const DashboardPage = () => {
   const [counts, setCounts] = useState({});
   const [history, setHistory] = useState([]);
   const [studentWise, setStudentWise] = useState([]);
+  const [roomId, setRoomId] = useState(() => localStorage.getItem("last_room_id") || "");
+  const [roomHistory, setRoomHistory] = useState([]);
   const [error, setError] = useState("");
 
   const aiSocket = useMemo(() => createAiSocket(), []);
 
   const fetchData = async () => {
     try {
-      const response = await aiClient.get("/emotions?limit=300");
-      setCounts(response.data.counts || {});
-      setHistory(response.data.history || []);
-      setStudentWise(response.data.student_wise || []);
+      const [aggregateResponse, roomResponse] = await Promise.all([
+        aiClient.get("/emotions?limit=300"),
+        roomId ? aiClient.get(`/emotions/${encodeURIComponent(roomId)}?limit=300`) : Promise.resolve({ data: [] })
+      ]);
+
+      setCounts(aggregateResponse.data.counts || {});
+      setHistory(aggregateResponse.data.history || []);
+      setStudentWise(aggregateResponse.data.student_wise || []);
+      setRoomHistory(Array.isArray(roomResponse.data) ? roomResponse.data : []);
       setError("");
     } catch (apiError) {
       setError("Failed to fetch dashboard data");
@@ -49,6 +56,19 @@ const DashboardPage = () => {
         },
         ...prev
       ].slice(0, 50));
+
+      if (roomId && payload.room_id === roomId) {
+        setRoomHistory((prev) => [
+          ...prev,
+          {
+            user_id: String(payload.student_id),
+            room_id: payload.room_id,
+            emotion: payload.emotion,
+            confidence: payload.confidence,
+            timestamp: payload.timestamp
+          }
+        ].slice(-300));
+      }
     });
 
     return () => {
@@ -56,7 +76,7 @@ const DashboardPage = () => {
       aiSocket.off("emotion_update");
       aiSocket.disconnect();
     };
-  }, [aiSocket]);
+  }, [aiSocket, roomId]);
 
   if (!currentUser || currentUser.role !== "instructor") {
     return (
@@ -81,8 +101,23 @@ const DashboardPage = () => {
       {error && <p className="mx-auto mb-4 max-w-6xl text-sm text-rose-600">{error}</p>}
 
       <main className="mx-auto grid max-w-6xl gap-4 lg:grid-cols-2">
-        <EmotionChart counts={counts} />
+        <EmotionChart counts={counts} timeline={roomHistory} roomId={roomId} />
         <StudentEmotionTable rows={studentWise} />
+
+        <div className="rounded-xl border border-slate-200 bg-white p-4 lg:col-span-2">
+          <h3 className="mb-3 text-sm font-semibold text-slate-900">Room Filter</h3>
+          <div className="flex max-w-md gap-2">
+            <input
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              value={roomId}
+              onChange={(event) => setRoomId(event.target.value)}
+              placeholder="Enter room ID"
+            />
+            <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white" onClick={fetchData}>
+              Load
+            </button>
+          </div>
+        </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 lg:col-span-2">
           <h3 className="mb-3 text-sm font-semibold text-slate-900">Recent Emotions</h3>

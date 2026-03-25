@@ -4,15 +4,30 @@ import {
   CategoryScale,
   LinearScale,
   BarElement,
+  PointElement,
+  LineElement,
   Title,
   Tooltip,
   Legend
 } from "chart.js";
-import { Bar } from "react-chartjs-2";
+import { Bar, Line } from "react-chartjs-2";
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
+ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineElement, Title, Tooltip, Legend);
 
-const EmotionChart = ({ counts }) => {
+const EMOTION_SCORE_MAP = {
+  Engaged: 5,
+  Happy: 5,
+  Neutral: 3,
+  Confused: 2,
+  Distracted: 2,
+  Bored: 1,
+  Sad: 1,
+  "No Face": 0,
+  Unavailable: 0,
+  Uncertain: 0
+};
+
+const EmotionChart = ({ counts, timeline = [], roomId = "" }) => {
   const labels = ["Engaged", "Confused", "Bored", "Distracted", "Neutral"];
 
   const data = {
@@ -26,10 +41,41 @@ const EmotionChart = ({ counts }) => {
     ]
   };
 
+  const timelineData = {
+    labels: timeline.map((entry) => new Date(entry.timestamp).toLocaleTimeString()),
+    datasets: [
+      {
+        label: roomId ? `Room ${roomId} Emotion Trend` : "Room Emotion Trend",
+        data: timeline.map((entry) => EMOTION_SCORE_MAP[entry.emotion] ?? 0),
+        borderColor: "#4f46e5",
+        backgroundColor: "rgba(79, 70, 229, 0.2)",
+        tension: 0.25,
+        fill: true
+      }
+    ]
+  };
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
       <h3 className="mb-3 text-sm font-semibold text-slate-900">Emotion Distribution</h3>
       <Bar data={data} options={{ responsive: true, plugins: { legend: { display: false } } }} />
+
+      <h3 className="mb-3 mt-6 text-sm font-semibold text-slate-900">Emotion Trend Over Time</h3>
+      <Line
+        data={timelineData}
+        options={{
+          responsive: true,
+          scales: {
+            y: {
+              min: 0,
+              max: 5,
+              ticks: {
+                stepSize: 1
+              }
+            }
+          }
+        }}
+      />
     </div>
   );
 };

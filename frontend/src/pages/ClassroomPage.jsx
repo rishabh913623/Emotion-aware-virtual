@@ -117,6 +117,7 @@ const ClassroomPage = () => {
   const { currentEmotion, history, error } = useEmotionCapture({
     enabled: Boolean(activeRoomId) && currentUser?.role === "student",
     userId: currentUser?.id,
+    roomId: activeRoomId,
     videoRef: localVideoRef
   });
 
@@ -213,7 +214,14 @@ const ClassroomPage = () => {
   const leaveRoom = () => {
     setActiveRoomId("");
     setMessages([]);
+    localStorage.removeItem("last_room_id");
   };
+
+  useEffect(() => {
+    if (activeRoomId) {
+      localStorage.setItem("last_room_id", activeRoomId);
+    }
+  }, [activeRoomId]);
 
   return (
     <div className="min-h-screen bg-slate-50 p-4">

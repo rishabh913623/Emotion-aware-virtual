@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { aiClient } from "../api/client";
 
-const CAPTURE_MS = 3000;
+const CAPTURE_MS = 4000;
 
-export const useEmotionCapture = ({ enabled, userId, videoRef }) => {
+export const useEmotionCapture = ({ enabled, userId, roomId, videoRef }) => {
   const [currentEmotion, setCurrentEmotion] = useState("Waiting");
   const [history, setHistory] = useState([]);
   const [error, setError] = useState("");
@@ -11,11 +11,11 @@ export const useEmotionCapture = ({ enabled, userId, videoRef }) => {
   const canvas = useMemo(() => document.createElement("canvas"), []);
 
   useEffect(() => {
-    if (!enabled || !userId) {
+    if (!enabled || !userId || !roomId) {
       return undefined;
     }
 
-    const capture = () => {
+    const capture = async () => {
       const video = videoRef.current;
       if (!video?.videoWidth || !video?.videoHeight) {
         console.log("[emotion] video not ready, skipping frame capture");
@@ -26,47 +26,41 @@ export const useEmotionCapture = ({ enabled, userId, videoRef }) => {
       const context = canvas.getContext("2d");
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      canvas.toBlob(async (blob) => {
-        if (!blob) {
-          return;
-        }
+      const imageBase64 = canvas.toDataURL("image/jpeg", 0.8);
 
-        try {
-          const formData = new FormData();
-          formData.append("image", blob, "frame.jpg");
-          formData.append("student_id", String(userId));
+      try {
+        const response = await aiClient.post("/predict", {
+          image: imageBase64,
+          userId,
+          student_id: userId,
+          roomId,
+          room_id: roomId
+        });
 
-          const response = await aiClient.post("/predict", formData, {
-            headers: {
-              "Content-Type": "multipart/form-data"
-            }
-          });
-
-          const emotion = response.data?.emotion || "Unknown";
-          console.log("[emotion] predict response", response.data);
-          setCurrentEmotion(emotion);
-          setHistory((prev) => [
-            {
-              emotion,
-              confidence: response.data?.confidence ?? 0,
-              timestamp: new Date().toLocaleTimeString()
-            },
-            ...prev
-          ].slice(0, 20));
-          setError("");
-        } catch (apiError) {
-          const message = apiError?.response?.data?.error || apiError?.response?.data?.message || "Emotion capture failed";
-          console.error("[emotion] predict error", apiError?.response?.data || apiError);
-          setError(message);
-        }
-      }, "image/jpeg");
+        const emotion = response.data?.emotion || "Unknown";
+        console.log("[emotion] predict response", response.data);
+        setCurrentEmotion(emotion);
+        setHistory((prev) => [
+          {
+            emotion,
+            confidence: response.data?.confidence ?? 0,
+            timestamp: new Date().toLocaleTimeString()
+          },
+          ...prev
+        ].slice(0, 20));
+        setError("");
+      } catch (apiError) {
+        const message = apiError?.response?.data?.error || apiError?.response?.data?.message || "Emotion capture failed";
+        console.error("[emotion] predict error", apiError?.response?.data || apiError);
+        setError(message);
+      }
     };
 
     const timer = setInterval(capture, CAPTURE_MS);
     capture();
 
     return () => clearInterval(timer);
-  }, [enabled, userId, videoRef, canvas]);
+  }, [enabled, userId, roomId, videoRef, canvas]);
 
   return {
     currentEmotion,

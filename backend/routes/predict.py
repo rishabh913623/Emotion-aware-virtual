@@ -8,7 +8,7 @@ import cv2
 
 from utils.model import get_emotion_model, predict_with_pretrained
 from utils.preprocess import decode_image_bytes, decode_base64_image, crop_face, tensorize_face
-from utils.db import insert_emotion, student_exists
+from utils.db import insert_emotion
 from socketio_instance import socketio
 
 predict_bp = Blueprint("predict", __name__)
@@ -64,7 +64,9 @@ def predict_emotion():
     """Predict emotion from an uploaded image."""
     try:
         logger.info("/predict called")
-        student_id_raw = request.form.get("student_id") or (request.json or {}).get("student_id") or "1"
+        payload = request.get_json(silent=True) or {}
+        student_id_raw = request.form.get("student_id") or payload.get("student_id") or payload.get("userId") or "1"
+        room_id = request.form.get("room_id") or payload.get("room_id") or payload.get("roomId") or "default-room"
         try:
             student_id = int(student_id_raw)
         except (TypeError, ValueError):
@@ -75,8 +77,8 @@ def predict_emotion():
             if "image" in request.files:
                 image_bytes = request.files["image"].read()
                 image = decode_image_bytes(image_bytes)
-            elif request.json and ("image_base64" in request.json or "image" in request.json):
-                image_base64 = request.json.get("image_base64") or request.json.get("image")
+            elif payload and ("image_base64" in payload or "image" in payload):
+                image_base64 = payload.get("image_base64") or payload.get("image")
                 image = decode_base64_image(image_base64)
             else:
                 return jsonify({"error": "No image provided."}), 400
@@ -148,10 +150,7 @@ def predict_emotion():
 
         storage_warning = None
         try:
-            if student_exists(student_id):
-                insert_emotion(student_id, emotion, confidence)
-            else:
-                storage_warning = f"student_id {student_id} not found in users table; emotion not persisted"
+            insert_emotion(student_id, room_id, emotion, confidence)
         except Exception as exc:
             storage_warning = f"failed to persist emotion: {str(exc)}"
 
@@ -159,6 +158,7 @@ def predict_emotion():
             "emotion_update",
             {
                 "student_id": student_id,
+                "room_id": room_id,
                 "emotion": emotion,
                 "confidence": confidence,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -168,6 +168,7 @@ def predict_emotion():
 
         response = {
             "student_id": student_id,
+            "room_id": room_id,
             "emotion": emotion,
             "raw_emotion": raw_emotion,
             "confidence": confidence,

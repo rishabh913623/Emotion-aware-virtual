@@ -23,11 +23,22 @@ CREATE TABLE IF NOT EXISTS emotions (
     timestamp TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS emotion_logs (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL,
+    room_id VARCHAR(128) NOT NULL,
+    emotion VARCHAR(32) NOT NULL,
+    confidence NUMERIC(5, 4) NOT NULL DEFAULT 0,
+    timestamp TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
 CREATE INDEX IF NOT EXISTS idx_rooms_instructor ON rooms (instructor_id);
 CREATE INDEX IF NOT EXISTS idx_emotions_student_time
     ON emotions (student_id, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_emotions_timestamp ON emotions (timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_emotion_logs_room_time ON emotion_logs (room_id, timestamp ASC);
+CREATE INDEX IF NOT EXISTS idx_emotion_logs_user_time ON emotion_logs (user_id, timestamp DESC);
 
 -- Sample seed users (passwords must be hashed in real usage)
 -- INSERT INTO users (name, role, email, password) VALUES
