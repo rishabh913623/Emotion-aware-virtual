@@ -28,7 +28,7 @@ def get_db_connection():
     """Create a new database connection."""
     database_url = os.getenv("DATABASE_URL")
     if database_url:
-        return psycopg2.connect(database_url, cursor_factory=RealDictCursor)
+        return psycopg2.connect(database_url, cursor_factory=RealDictCursor, connect_timeout=5)
 
     return psycopg2.connect(
         host=os.getenv("DB_HOST", "localhost"),
@@ -37,6 +37,7 @@ def get_db_connection():
         user=os.getenv("DB_USER", "postgres"),
         password=os.getenv("DB_PASSWORD", "postgres"),
         cursor_factory=RealDictCursor,
+        connect_timeout=5,
     )
 
 

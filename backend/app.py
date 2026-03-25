@@ -20,7 +20,6 @@ from routes.emotions import emotions_bp
 from routes.quiz import quiz_bp
 from routes.auth import auth_bp
 from socketio_instance import socketio
-from utils.model import preload_models
 
 
 # ------------------ LOGGING ------------------
@@ -34,16 +33,6 @@ room_participants = {}
 sid_to_room = {}
 sid_user = {}
 room_lock = RLock()
-
-
-# ------------------ CORS ------------------
-def parse_allowed_origins():
-    raw = os.getenv(
-        "CORS_ORIGIN",
-        "http://localhost:5173,http://localhost:5174"
-    )
-    origins = [o.strip() for o in raw.split(",") if o.strip()]
-    return origins or ["http://localhost:5173"]
 
 
 def decode_socket_token(token):
@@ -71,9 +60,18 @@ def create_app():
     app = Flask(__name__)
 
     # CORS config
-    cors_origins = parse_allowed_origins()
-    CORS(app, origins=cors_origins)
-    logger.info("CORS origins: %s", cors_origins)
+    CORS(
+        app,
+        resources={r"/*": {"origins": "*"}},
+        supports_credentials=True,
+    )
+
+    @app.after_request
+    def after_request(response):
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        return response
 
     # Register routes
     app.register_blueprint(predict_bp)
@@ -84,12 +82,8 @@ def create_app():
     # SocketIO init (important fix)
     socketio.init_app(app, cors_allowed_origins="*")
 
-    # ------------------ MODEL LOADING (SAFE) ------------------
-    try:
-        preload_report = preload_models()
-        logger.info("Model preload status: %s", preload_report)
-    except Exception as e:
-        logger.error("Model preload failed: %s", str(e))
+    # ------------------ MODEL LOADING ------------------
+    # Disabled at startup to avoid blocking requests and cold-start timeouts.
 
     # ------------------ ROUTES ------------------
 
@@ -307,11 +301,15 @@ def create_app():
 
     @app.errorhandler(Exception)
     def handle_error(e):
+        import traceback
+
         if isinstance(e, HTTPException):
             return jsonify({"error": e.description}), e.code
 
+        print("ERROR:", str(e))
+        traceback.print_exc()
         logger.exception("Unhandled server error: %s", str(e))
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
     return app
 
