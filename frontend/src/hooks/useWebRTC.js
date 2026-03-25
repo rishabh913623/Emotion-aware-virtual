@@ -17,6 +17,25 @@ export const useWebRTC = ({ socket, roomId, enabled }) => {
     setRemoteStreams((prev) => ({ ...prev, [socketId]: stream }));
   };
 
+  const addLocalTracksToConnection = useCallback((connection) => {
+    if (!connection || !localStreamRef.current) {
+      return;
+    }
+
+    const existingTrackIds = new Set(
+      connection
+        .getSenders()
+        .map((sender) => sender.track?.id)
+        .filter(Boolean)
+    );
+
+    localStreamRef.current.getTracks().forEach((track) => {
+      if (!existingTrackIds.has(track.id)) {
+        connection.addTrack(track, localStreamRef.current);
+      }
+    });
+  }, []);
+
   const removeRemoteStream = (socketId) => {
     setRemoteStreams((prev) => {
       const next = { ...prev };
@@ -66,12 +85,7 @@ export const useWebRTC = ({ socket, roomId, enabled }) => {
       const connection = new RTCPeerConnection(RTC_CONFIG);
       peerConnectionsRef.current.set(targetSocketId, connection);
       console.log("[webrtc] peer connection created", targetSocketId);
-
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => {
-          connection.addTrack(track, localStreamRef.current);
-        });
-      }
+      addLocalTracksToConnection(connection);
 
       connection.onicecandidate = (event) => {
         if (event.candidate) {
@@ -100,7 +114,7 @@ export const useWebRTC = ({ socket, roomId, enabled }) => {
 
       return connection;
     },
-    [removePeerConnection, socket]
+    [addLocalTracksToConnection, removePeerConnection, socket]
   );
 
   const createOfferForUser = useCallback(
@@ -154,9 +168,17 @@ export const useWebRTC = ({ socket, roomId, enabled }) => {
       localVideoRef.current.muted = true;
       localVideoRef.current.play().catch(() => {});
     }
+
+    peerConnectionsRef.current.forEach((connection, targetSocketId) => {
+      addLocalTracksToConnection(connection);
+      if (shouldInitiateConnection(socket?.id, targetSocketId)) {
+        createOfferForUser(targetSocketId);
+      }
+    });
+
     console.log("[webrtc] local media initialized");
     return stream;
-  }, []);
+  }, [addLocalTracksToConnection, createOfferForUser, shouldInitiateConnection, socket?.id]);
 
   const emitJoinRoom = useCallback(() => {
     if (!socket || !roomId || !socket.connected) {
@@ -181,11 +203,11 @@ export const useWebRTC = ({ socket, roomId, enabled }) => {
     let mounted = true;
 
     const bootstrap = async () => {
+      emitJoinRoom();
       try {
         await initializeLocalMedia();
-        emitJoinRoom();
       } catch (error) {
-        console.error("Failed to initialize media", error);
+        console.warn("[webrtc] media initialization failed; joined room without local media", error);
       }
     };
 
@@ -291,12 +313,12 @@ export const useWebRTC = ({ socket, roomId, enabled }) => {
     const onConnect = async () => {
       console.log("[socket] connected", socket.id);
       joinedRoomRef.current = "";
+      emitJoinRoom();
       try {
         await initializeLocalMedia();
       } catch (error) {
-        console.error("Failed to initialize media after connect", error);
+        console.warn("[webrtc] media initialization failed after reconnect", error);
       }
-      emitJoinRoom();
     };
 
     const onDisconnect = (reason) => {

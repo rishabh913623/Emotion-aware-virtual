@@ -22,9 +22,9 @@ logger = logging.getLogger(__name__)
 
 def parse_allowed_origins() -> list[str]:
     """Parse CORS origins from env; fallback to local dev origin."""
-    raw_origins = os.getenv("CORS_ORIGIN", "http://localhost:5173")
+    raw_origins = os.getenv("CORS_ORIGIN", "http://localhost:5173,http://localhost:5174")
     origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
-    return origins or ["http://localhost:5173"]
+    return origins or ["http://localhost:5173", "http://localhost:5174"]
 
 
 def create_app() -> Flask:

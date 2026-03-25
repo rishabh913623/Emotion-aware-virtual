@@ -12,10 +12,14 @@ dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
+const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173,http://localhost:5174")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN || "http://localhost:5173",
+    origin: allowedOrigins,
     credentials: true
   })
 );
@@ -34,7 +38,7 @@ app.use((error, _req, res, _next) => {
 
 const io = new Server(server, {
   cors: {
-    origin: process.env.CORS_ORIGIN || "http://localhost:5173",
+    origin: allowedOrigins,
     methods: ["GET", "POST"]
   }
 });
@@ -43,5 +47,6 @@ registerSocketHandlers(io);
 
 const port = Number(process.env.PORT || 4000);
 server.listen(port, () => {
+  console.log("Allowed CORS origins:", allowedOrigins);
   console.log(`Signaling server listening on http://localhost:${port}`);
 });
