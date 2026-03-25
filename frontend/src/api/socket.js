@@ -1,21 +1,22 @@
 import { io } from "socket.io-client";
 
-const SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL || "http://localhost:4000";
+const SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL || "http://localhost:3000";
 const AI_URL = import.meta.env.VITE_AI_API_URL || "http://localhost:5001";
 
 export const createSignalingSocket = (token) => {
+  console.log("[socket] Connecting signaling URL:", SIGNALING_URL);
   const socket = io(SIGNALING_URL, {
     auth: { token },
     reconnection: true,
     reconnectionAttempts: 5,
     reconnectionDelay: 1000,
     timeout: 10000,
-    transports: ["websocket"],
+    transports: ["websocket", "polling"],
     withCredentials: true
   });
 
   socket.on("connect", () => {
-    console.log("[socket] Connected:", socket.id);
+    console.log("Connected:", socket.id);
   });
 
   socket.on("disconnect", (reason) => {

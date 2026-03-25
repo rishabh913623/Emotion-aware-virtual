@@ -25,11 +25,11 @@ const ClassroomPage = () => {
   const [sharing, setSharing] = useState(false);
 
   const socket = useMemo(() => {
-    if (!auth?.token || !currentUser) {
+    if (!auth?.token) {
       return null;
     }
     return createSignalingSocket(auth.token);
-  }, [auth?.token, currentUser]);
+  }, [auth?.token]);
 
   useEffect(() => {
     if (auth?.token) {
@@ -73,10 +73,45 @@ const ClassroomPage = () => {
     };
   }, [socket, logout, navigate]);
 
+  useEffect(() => {
+    if (!socket || !activeRoomId) {
+      return undefined;
+    }
+
+    const emitJoinRoom = () => {
+      console.log("Joining room:", activeRoomId);
+      socket.emit(
+        "join-room",
+        {
+          roomId: activeRoomId,
+          userId: currentUser?.id || socket.id,
+          name: currentUser?.name,
+          role: currentUser?.role
+        },
+        (ack) => {
+          console.log("[socket] join-room ack", ack);
+        }
+      );
+    };
+
+    if (socket.connected) {
+      emitJoinRoom();
+    }
+
+    socket.on("connect", emitJoinRoom);
+    const retryTimer = setTimeout(emitJoinRoom, 1000);
+
+    return () => {
+      clearTimeout(retryTimer);
+      socket.off("connect", emitJoinRoom);
+    };
+  }, [socket, activeRoomId, currentUser?.id, currentUser?.name, currentUser?.role]);
+
   const { localVideoRef, participants, remoteStreams, toggleAudio, toggleVideo, shareScreen } = useWebRTC({
     socket,
     roomId: activeRoomId,
-    enabled: Boolean(activeRoomId)
+    enabled: Boolean(activeRoomId),
+    currentUser
   });
 
   const { currentEmotion, history, error } = useEmotionCapture({
@@ -84,6 +119,26 @@ const ClassroomPage = () => {
     userId: currentUser?.id,
     videoRef: localVideoRef
   });
+
+  const emitRoomJoin = (targetRoomId) => {
+    if (!socket || !targetRoomId) {
+      return;
+    }
+
+    console.log("Joining room:", targetRoomId);
+    socket.emit(
+      "join-room",
+      {
+        roomId: targetRoomId,
+        userId: currentUser?.id || socket.id,
+        name: currentUser?.name,
+        role: currentUser?.role
+      },
+      (ack) => {
+        console.log("[socket] join-room ack", ack);
+      }
+    );
+  };
 
   if (!currentUser) {
     return null;
@@ -94,13 +149,16 @@ const ClassroomPage = () => {
     const newRoom = response.data.room.id;
     setRoomId(newRoom);
     setActiveRoomId(newRoom);
+    emitRoomJoin(newRoom);
   };
 
   const joinRoom = () => {
     if (!roomId.trim()) {
       return;
     }
-    setActiveRoomId(roomId.trim());
+    const selectedRoomId = roomId.trim();
+    setActiveRoomId(selectedRoomId);
+    emitRoomJoin(selectedRoomId);
   };
 
   const sendMessage = (message) => {

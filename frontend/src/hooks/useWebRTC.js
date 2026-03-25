@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const RTC_CONFIG = {
-  iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    {
+      urls: "turn:openrelay.metered.ca:80",
+      username: "openrelayproject",
+      credential: "openrelayproject"
+    }
+  ]
 };
 
-export const useWebRTC = ({ socket, roomId, enabled }) => {
+export const useWebRTC = ({ socket, roomId, enabled, currentUser }) => {
   const localVideoRef = useRef(null);
   const localStreamRef = useRef(null);
   const peerConnectionsRef = useRef(new Map());
@@ -89,9 +96,10 @@ export const useWebRTC = ({ socket, roomId, enabled }) => {
 
       connection.onicecandidate = (event) => {
         if (event.candidate) {
-          console.log("[webrtc] local ICE candidate", targetSocketId);
-          socket.emit("signal:ice-candidate", {
+          console.log("ICE candidate exchanged", { to: targetSocketId });
+          socket.emit("ice-candidate", {
             targetSocketId,
+            to: targetSocketId,
             candidate: event.candidate
           });
         }
@@ -124,8 +132,11 @@ export const useWebRTC = ({ socket, roomId, enabled }) => {
         const offer = await connection.createOffer();
         await connection.setLocalDescription(offer);
         console.log("[webrtc] sending offer", targetSocketId);
-        socket.emit("signal:offer", {
+        console.log("Offer sent");
+        socket.emit("offer", {
           targetSocketId,
+          to: targetSocketId,
+          offer,
           sdp: offer
         });
       } catch (error) {
@@ -181,19 +192,30 @@ export const useWebRTC = ({ socket, roomId, enabled }) => {
   }, [addLocalTracksToConnection, createOfferForUser, shouldInitiateConnection, socket?.id]);
 
   const emitJoinRoom = useCallback(() => {
-    if (!socket || !roomId || !socket.connected) {
+    if (!socket || !roomId) {
       return;
     }
 
-    const joinKey = `${socket.id}:${roomId}`;
+    const joinKey = `${socket.id || "pending"}:${roomId}`;
     if (joinedRoomRef.current === joinKey) {
       return;
     }
 
-    console.log("[socket] joining room", roomId, "as", socket.id);
-    socket.emit("join-room", { roomId, userId: socket.id });
+    console.log("Joining room:", roomId);
+    socket.emit(
+      "join-room",
+      {
+        roomId,
+        userId: currentUser?.id || socket.id,
+        name: currentUser?.name,
+        role: currentUser?.role
+      },
+      (ack) => {
+        console.log("[socket] join-room ack", ack);
+      }
+    );
     joinedRoomRef.current = joinKey;
-  }, [socket, roomId]);
+  }, [socket, roomId, currentUser?.id, currentUser?.name, currentUser?.role]);
 
   useEffect(() => {
     if (!socket || !roomId || !enabled) {
@@ -203,21 +225,46 @@ export const useWebRTC = ({ socket, roomId, enabled }) => {
     let mounted = true;
 
     const bootstrap = async () => {
-      emitJoinRoom();
       try {
         await initializeLocalMedia();
       } catch (error) {
         console.warn("[webrtc] media initialization failed; joined room without local media", error);
       }
+      emitJoinRoom();
     };
 
     const onParticipants = (list) => {
       if (!mounted) {
         return;
       }
-      console.log("[socket] room participants", list);
-      setParticipants(list);
-      list.forEach((participant) => {
+      const normalized = (Array.isArray(list) ? list : [])
+        .filter(Boolean)
+        .map((participant) => {
+          if (typeof participant === "string") {
+            return {
+              socketId: participant,
+              userId: participant,
+              name: `Participant ${participant.slice(0, 4)}`,
+              role: "student"
+            };
+          }
+
+          const socketId = participant.socketId || participant.userId || participant.id;
+          return {
+            socketId,
+            userId: participant.userId || participant.id || socketId,
+            name: participant.name || `Participant ${String(socketId).slice(0, 4)}`,
+            role: participant.role || "student",
+            isMuted: Boolean(participant.isMuted),
+            isCameraOff: Boolean(participant.isCameraOff),
+            isSharingScreen: Boolean(participant.isSharingScreen)
+          };
+        })
+        .filter((participant) => participant.socketId);
+
+      console.log("[socket] room participants", normalized);
+      setParticipants(normalized);
+      normalized.forEach((participant) => {
         if (participant.socketId !== socket.id) {
           connectToNewUser(participant.socketId);
         }
@@ -234,7 +281,7 @@ export const useWebRTC = ({ socket, roomId, enabled }) => {
         return;
       }
 
-      console.log("[socket] user connected", participant.socketId);
+      console.log("User connected:", participant.socketId);
       setParticipants((prev) => {
         const exists = prev.some((item) => item.socketId === participant.socketId);
         if (exists) {
@@ -254,71 +301,76 @@ export const useWebRTC = ({ socket, roomId, enabled }) => {
       removePeerConnection(socketId);
     };
 
-    const onOffer = async ({ fromSocketId, sdp, offer }) => {
+    const onOffer = async ({ fromSocketId, from, sdp, offer }) => {
+      const remoteSocketId = fromSocketId || from;
       const remoteOffer = sdp || offer;
       if (!remoteOffer) {
         return;
       }
 
       try {
-        console.log("[webrtc] offer received", fromSocketId);
-        const connection = ensurePeerConnection(fromSocketId);
+        console.log("[webrtc] offer received", remoteSocketId);
+        const connection = ensurePeerConnection(remoteSocketId);
         await connection.setRemoteDescription(new RTCSessionDescription(remoteOffer));
-        await flushPendingIce(fromSocketId, connection);
+        await flushPendingIce(remoteSocketId, connection);
         const answer = await connection.createAnswer();
         await connection.setLocalDescription(answer);
-        console.log("[webrtc] sending answer", fromSocketId);
-        socket.emit("signal:answer", {
-          targetSocketId: fromSocketId,
+        console.log("[webrtc] sending answer", remoteSocketId);
+        socket.emit("answer", {
+          targetSocketId: remoteSocketId,
+          to: remoteSocketId,
+          answer,
           sdp: answer
         });
       } catch (error) {
-        console.error("[webrtc] failed handling offer", fromSocketId, error);
+        console.error("[webrtc] failed handling offer", remoteSocketId, error);
       }
     };
 
-    const onAnswer = async ({ fromSocketId, sdp, answer }) => {
+    const onAnswer = async ({ fromSocketId, from, sdp, answer }) => {
+      const remoteSocketId = fromSocketId || from;
       const remoteAnswer = sdp || answer;
       if (!remoteAnswer) {
         return;
       }
 
       try {
-        console.log("[webrtc] answer received", fromSocketId);
-        const connection = ensurePeerConnection(fromSocketId);
+        console.log("Answer received");
+        const connection = ensurePeerConnection(remoteSocketId);
         await connection.setRemoteDescription(new RTCSessionDescription(remoteAnswer));
-        await flushPendingIce(fromSocketId, connection);
+        await flushPendingIce(remoteSocketId, connection);
       } catch (error) {
-        console.error("[webrtc] failed handling answer", fromSocketId, error);
+        console.error("[webrtc] failed handling answer", remoteSocketId, error);
       }
     };
 
-    const onIceCandidate = async ({ fromSocketId, candidate }) => {
+    const onIceCandidate = async ({ fromSocketId, from, candidate }) => {
+      const remoteSocketId = fromSocketId || from;
       if (!candidate) {
         return;
       }
 
       try {
-        const connection = ensurePeerConnection(fromSocketId);
+        const connection = ensurePeerConnection(remoteSocketId);
         if (!connection.remoteDescription) {
-          queueIceCandidate(fromSocketId, candidate);
+          queueIceCandidate(remoteSocketId, candidate);
           return;
         }
         await connection.addIceCandidate(new RTCIceCandidate(candidate));
       } catch (error) {
-        console.error("[webrtc] failed adding ICE candidate", fromSocketId, error);
+        console.error("[webrtc] failed adding ICE candidate", remoteSocketId, error);
       }
     };
 
     const onConnect = async () => {
-      console.log("[socket] connected", socket.id);
+      console.log("Connected:", socket.id);
       joinedRoomRef.current = "";
-      emitJoinRoom();
       try {
         await initializeLocalMedia();
       } catch (error) {
         console.warn("[webrtc] media initialization failed after reconnect", error);
       }
+      emitJoinRoom();
     };
 
     const onDisconnect = (reason) => {
@@ -333,9 +385,9 @@ export const useWebRTC = ({ socket, roomId, enabled }) => {
     socket.on("user-connected", onUserConnected);
     socket.on("room:user-joined", onUserConnected);
     socket.on("room:user-left", onUserLeft);
-    socket.on("signal:offer", onOffer);
-    socket.on("signal:answer", onAnswer);
-    socket.on("signal:ice-candidate", onIceCandidate);
+    socket.on("offer", onOffer);
+    socket.on("answer", onAnswer);
+    socket.on("ice-candidate", onIceCandidate);
 
     bootstrap();
 
@@ -348,9 +400,9 @@ export const useWebRTC = ({ socket, roomId, enabled }) => {
       socket.off("user-connected", onUserConnected);
       socket.off("room:user-joined", onUserConnected);
       socket.off("room:user-left", onUserLeft);
-      socket.off("signal:offer", onOffer);
-      socket.off("signal:answer", onAnswer);
-      socket.off("signal:ice-candidate", onIceCandidate);
+      socket.off("offer", onOffer);
+      socket.off("answer", onAnswer);
+      socket.off("ice-candidate", onIceCandidate);
       peerConnectionsRef.current.forEach((connection) => connection.close());
       peerConnectionsRef.current.clear();
       pendingIceRef.current.clear();

@@ -12,17 +12,21 @@ dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173,http://localhost:5174")
+const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+const corsOptions = {
+  origin: allowedOrigins,
+  methods: ["GET", "POST"],
+  credentials: true
+};
+
 app.use(
-  cors({
-    origin: allowedOrigins,
-    credentials: true
-  })
+  cors(corsOptions)
 );
+app.options("*", cors(corsOptions));
 app.use(express.json({ limit: "5mb" }));
 
 app.get("/health", (_, res) => {
@@ -37,16 +41,15 @@ app.use((error, _req, res, _next) => {
 });
 
 const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ["GET", "POST"]
-  }
+  cors: corsOptions,
+  transports: ["websocket", "polling"]
 });
 
 registerSocketHandlers(io);
 
-const port = Number(process.env.PORT || 4000);
-server.listen(port, () => {
+const port = Number(process.env.PORT || 3000);
+const host = process.env.HOST || "0.0.0.0";
+server.listen(port, host, () => {
   console.log("Allowed CORS origins:", allowedOrigins);
   console.log(`Signaling server listening on http://localhost:${port}`);
 });

@@ -34,10 +34,19 @@ export const registerSocketHandlers = (io) => {
   io.on("connection", (socket) => {
     logSocket(socket, "connected");
 
-    const joinRoom = ({ roomId }) => {
+    socket.onAny((eventName, payload) => {
+      if (["join-room", "offer", "answer", "ice-candidate", "room:join"].includes(eventName)) {
+        logSocket(socket, `event:${eventName}`, { payload });
+      }
+    });
+
+    const joinRoom = ({ roomId, userId, name, role } = {}, callback) => {
       if (!roomId) {
         logSocket(socket, "join-room rejected: missing roomId");
         socket.emit("room:error", { error: "roomId is required" });
+        if (typeof callback === "function") {
+          callback({ ok: false, error: "roomId is required" });
+        }
         return;
       }
 
@@ -57,9 +66,9 @@ export const registerSocketHandlers = (io) => {
 
       const participant = {
         socketId: socket.id,
-        userId: socket.user.id,
-        name: socket.user.name,
-        role: socket.user.role,
+        userId: userId || socket.user.id,
+        name: name || socket.user.name,
+        role: role || socket.user.role,
         isMuted: false,
         isCameraOff: false,
         isSharingScreen: false
@@ -74,42 +83,61 @@ export const registerSocketHandlers = (io) => {
       socket.emit("room:participants", existingParticipants);
       socket.to(roomId).emit("user-connected", participant);
       socket.to(roomId).emit("room:user-joined", participant);
-      io.to(roomId).emit("room:participants", getParticipants(roomId));
+      const participants = getParticipants(roomId);
+      io.to(roomId).emit("room:participants", participants);
+      if (typeof callback === "function") {
+        callback({ ok: true, roomId, participants: participants.length });
+      }
     };
 
     socket.on("join-room", joinRoom);
     socket.on("room:join", joinRoom);
 
-    const forwardOffer = ({ targetSocketId, sdp }) => {
+    const forwardOffer = ({ targetSocketId, to, sdp, offer }) => {
+      const recipientSocketId = targetSocketId || to;
+      const sessionDescription = sdp || offer;
+      if (!recipientSocketId || !sessionDescription) {
+        return;
+      }
       logSocket(socket, "offer", { targetSocketId });
-      io.to(targetSocketId).emit("signal:offer", {
+      io.to(recipientSocketId).emit("offer", {
         fromSocketId: socket.id,
-        sdp
+        from: socket.id,
+        offer: sessionDescription,
+        sdp: sessionDescription
       });
     };
 
     socket.on("signal:offer", forwardOffer);
-    socket.on("offer", ({ targetSocketId, offer }) =>
-      forwardOffer({ targetSocketId, sdp: offer })
-    );
+    socket.on("offer", forwardOffer);
 
-    const forwardAnswer = ({ targetSocketId, sdp }) => {
+    const forwardAnswer = ({ targetSocketId, to, sdp, answer }) => {
+      const recipientSocketId = targetSocketId || to;
+      const sessionDescription = sdp || answer;
+      if (!recipientSocketId || !sessionDescription) {
+        return;
+      }
       logSocket(socket, "answer", { targetSocketId });
-      io.to(targetSocketId).emit("signal:answer", {
+      io.to(recipientSocketId).emit("answer", {
         fromSocketId: socket.id,
-        sdp
+        from: socket.id,
+        answer: sessionDescription,
+        sdp: sessionDescription
       });
     };
 
     socket.on("signal:answer", forwardAnswer);
-    socket.on("answer", ({ targetSocketId, answer }) =>
-      forwardAnswer({ targetSocketId, sdp: answer })
-    );
+    socket.on("answer", forwardAnswer);
 
-    const forwardIce = ({ targetSocketId, candidate }) => {
+    const forwardIce = ({ targetSocketId, to, candidate }) => {
+      const recipientSocketId = targetSocketId || to;
+      if (!recipientSocketId || !candidate) {
+        return;
+      }
       logSocket(socket, "ice-candidate", { targetSocketId });
-      io.to(targetSocketId).emit("signal:ice-candidate", {
+      io.to(recipientSocketId).emit("ice-candidate", {
         fromSocketId: socket.id,
+        from: socket.id,
         candidate
       });
     };
