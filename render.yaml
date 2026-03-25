@@ -19,7 +19,7 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: CORS_ORIGIN
-        sync: false
+        value: https://emotion-aware-in-virtual-classroom.vercel.app
       - key: DATABASE_URL
         fromDatabase:
           name: emotion-db
@@ -40,6 +40,8 @@ services:
         value: ../model/emotion_model.h5
       - key: JWT_SECRET
         generateValue: true
+      - key: CORS_ORIGIN
+        value: https://emotion-aware-in-virtual-classroom.vercel.app
       - key: TF_INTRA_THREADS
         value: "1"
       - key: TF_INTER_THREADS

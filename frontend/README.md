@@ -20,6 +20,7 @@ cp .env.example .env
 ```bash
 VITE_SIGNALING_URL=http://localhost:4000
 VITE_AI_API_URL=http://localhost:5001
+VITE_API_BASE_URL=https://emotion-ai-backend-rwgf.onrender.com
 ```
 
 ## Run

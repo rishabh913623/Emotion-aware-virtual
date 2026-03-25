@@ -61,14 +61,17 @@ export const AuthProvider = ({ children }) => {
     setAuth(normalized);
     if (normalized) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+      localStorage.setItem("token", normalized.token);
     } else {
       localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem("token");
     }
   };
 
   const logout = () => {
     setAuth(null);
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem("token");
   };
 
   const value = useMemo(() => ({ auth, login, logout }), [auth]);

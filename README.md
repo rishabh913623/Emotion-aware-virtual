@@ -57,8 +57,32 @@ npm run dev
 ## Frontend Environment
 
 ```bash
-VITE_SIGNALING_URL=http://localhost:4000
+VITE_SIGNALING_URL=http://localhost:3000
 VITE_AI_API_URL=http://localhost:5001
+```
+
+## Production Environment (Current Deployment)
+
+Frontend (Vercel):
+
+- `https://emotion-aware-in-virtual-classroom.vercel.app`
+
+Backend services (Render):
+
+- `https://emotion-signaling.onrender.com`
+- `https://emotion-ai-backend-rwgf.onrender.com`
+
+Vercel env vars:
+
+```bash
+VITE_SIGNALING_URL=https://emotion-signaling.onrender.com
+VITE_AI_API_URL=https://emotion-ai-backend-rwgf.onrender.com
+```
+
+Render `CORS_ORIGIN` (both signaling and AI backend):
+
+```bash
+CORS_ORIGIN=https://emotion-aware-in-virtual-classroom.vercel.app
 ```
 
 ## Core Capabilities
@@ -93,7 +117,7 @@ In Render:
 1. New + -> Blueprint
 2. Select this repository
 3. Confirm creation from `render.yaml`
-4. After deploy, set `CORS_ORIGIN` on `emotion-signaling` to your Vercel URL
+4. Verify `CORS_ORIGIN` is set to your Vercel URL (pre-filled in `render.yaml`)
 
 ### Database Schema Migration
 

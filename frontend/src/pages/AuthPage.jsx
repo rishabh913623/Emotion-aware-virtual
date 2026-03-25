@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { signalingClient, attachAuthToken } from "../api/client";
+import { signalingClient, attachAuthToken, loginWithBackend } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 
 const AuthPage = () => {
@@ -22,19 +22,27 @@ const AuthPage = () => {
     setError("");
 
     try {
-      const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/register";
-      const payload =
-        mode === "login"
-          ? { email: form.email, password: form.password }
-          : { name: form.name, email: form.email, password: form.password, role: form.role };
+      if (mode === "login") {
+        const data = await loginWithBackend(form.email, form.password);
+        login(data);
+        attachAuthToken(data.token);
+        navigate("/classroom");
+        return;
+      }
 
-      const response = await signalingClient.post(endpoint, payload);
+      const response = await signalingClient.post("/api/auth/register", {
+        name: form.name,
+        email: form.email,
+        password: form.password,
+        role: form.role
+      });
+
       const authPayload = { token: response.data.token, user: response.data.user };
       login(authPayload);
       attachAuthToken(response.data.token);
       navigate("/classroom");
-    } catch (apiError) {
-      setError(apiError.response?.data?.error || "Authentication failed");
+    } catch (err) {
+      setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -58,8 +66,8 @@ const AuthPage = () => {
 
         <input
           className="mt-4 w-full rounded-lg border border-slate-200 px-4 py-2"
-          placeholder="Email"
-          type="email"
+          placeholder="Username or Email"
+          type="text"
           value={form.email}
           onChange={(event) => handleChange("email", event.target.value)}
           required

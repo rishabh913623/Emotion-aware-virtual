@@ -1,3 +1,6 @@
+import eventlet
+eventlet.monkey_patch()
+
 """Flask application entry point for Emotion Aware Virtual Classroom."""
 
 import os
@@ -5,12 +8,12 @@ import logging
 from datetime import datetime, timezone
 from threading import RLock
 
+from dotenv import load_dotenv
 import jwt
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from dotenv import load_dotenv
-from werkzeug.exceptions import HTTPException
 from flask_socketio import emit, join_room, leave_room
+from werkzeug.exceptions import HTTPException
 
 from routes.predict import predict_bp
 from routes.emotions import emotions_bp
@@ -79,7 +82,7 @@ def create_app():
     app.register_blueprint(auth_bp)
 
     # SocketIO init (important fix)
-    socketio.init_app(app, cors_allowed_origins=cors_origins)
+    socketio.init_app(app, cors_allowed_origins="*")
 
     # ------------------ MODEL LOADING (SAFE) ------------------
     try:
@@ -308,7 +311,7 @@ def create_app():
             return jsonify({"error": e.description}), e.code
 
         logger.exception("Unhandled server error: %s", str(e))
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({"error": str(e)}), 500
 
     return app
 
