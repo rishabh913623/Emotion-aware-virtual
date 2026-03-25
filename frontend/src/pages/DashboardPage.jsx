@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { aiClient } from "../api/client";
 import { createAiSocket } from "../api/socket";
@@ -7,18 +7,52 @@ import { useAuth } from "../context/AuthContext";
 import EmotionChart from "../components/dashboard/EmotionChart";
 import StudentEmotionTable from "../components/dashboard/StudentEmotionTable";
 
+const EMOTION_SCORE_MAP = {
+  Engaged: 5,
+  Happy: 5,
+  Neutral: 3,
+  Confused: 2,
+  Distracted: 2,
+  Bored: 1,
+  Sad: 1,
+  "No Face": 0,
+  Uncertain: 0,
+  Unavailable: 0
+};
+
 const DashboardPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { auth } = useAuth();
   const currentUser = auth?.user;
   const [counts, setCounts] = useState({});
   const [history, setHistory] = useState([]);
   const [studentWise, setStudentWise] = useState([]);
-  const [roomId, setRoomId] = useState(() => localStorage.getItem("last_room_id") || "");
+  const [roomId, setRoomId] = useState(() => location.state?.roomId || localStorage.getItem("last_room_id") || "");
   const [roomHistory, setRoomHistory] = useState([]);
   const [error, setError] = useState("");
 
   const aiSocket = useMemo(() => createAiSocket(), []);
+
+  const timelineSource = roomHistory.length ? roomHistory : history;
+  const averageEmotionScore = useMemo(() => {
+    if (!timelineSource.length) {
+      return 0;
+    }
+    const scores = timelineSource.map((entry) => EMOTION_SCORE_MAP[entry.emotion] ?? 0);
+    const total = scores.reduce((sum, score) => sum + score, 0);
+    return total / scores.length;
+  }, [timelineSource]);
+
+  const engagementLevel = useMemo(() => {
+    if (averageEmotionScore >= 3.8) {
+      return "High";
+    }
+    if (averageEmotionScore >= 2.4) {
+      return "Medium";
+    }
+    return "Low";
+  }, [averageEmotionScore]);
 
   const fetchData = async () => {
     try {
@@ -93,7 +127,10 @@ const DashboardPage = () => {
           <h1 className="text-xl font-semibold text-slate-900">Instructor Dashboard</h1>
           <p className="text-sm text-slate-500">Real-time emotion analytics and trends</p>
         </div>
-        <button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white" onClick={() => navigate("/classroom")}>
+        <button
+          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white"
+          onClick={() => navigate("/classroom", { state: { roomId } })}
+        >
           Back to Classroom
         </button>
       </header>
@@ -101,6 +138,28 @@ const DashboardPage = () => {
       {error && <p className="mx-auto mb-4 max-w-6xl text-sm text-rose-600">{error}</p>}
 
       <main className="mx-auto grid max-w-6xl gap-4 lg:grid-cols-2">
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <h3 className="text-sm font-semibold text-slate-900">Average Emotion Score</h3>
+          <p className="mt-2 text-2xl font-bold text-indigo-600">{averageEmotionScore.toFixed(2)} / 5</p>
+          <p className="mt-1 text-xs text-slate-500">Computed from room timeline emotion samples.</p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <h3 className="text-sm font-semibold text-slate-900">Engagement Indicator</h3>
+          <span
+            className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+              engagementLevel === "High"
+                ? "bg-emerald-100 text-emerald-700"
+                : engagementLevel === "Medium"
+                  ? "bg-amber-100 text-amber-700"
+                  : "bg-rose-100 text-rose-700"
+            }`}
+          >
+            {engagementLevel}
+          </span>
+          <p className="mt-2 text-xs text-slate-500">High: attentive class, Medium: mixed focus, Low: needs intervention.</p>
+        </div>
+
         <EmotionChart counts={counts} timeline={roomHistory} roomId={roomId} />
         <StudentEmotionTable rows={studentWise} />
 

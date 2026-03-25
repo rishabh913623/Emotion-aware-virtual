@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { signalingClient, aiClient, attachAuthToken } from "../api/client";
 import { createSignalingSocket } from "../api/socket";
@@ -11,18 +11,28 @@ import ControlsBar from "../components/classroom/ControlsBar";
 import ChatSidebar from "../components/classroom/ChatSidebar";
 import EmotionSidebar from "../components/classroom/EmotionSidebar";
 import ParticipantPanel from "../components/classroom/ParticipantPanel";
+import QuizPanel from "../components/classroom/QuizPanel";
 
 const ClassroomPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { auth, logout } = useAuth();
   const currentUser = auth?.user;
-  const [roomId, setRoomId] = useState("");
-  const [activeRoomId, setActiveRoomId] = useState("");
+  const restoredRoomId = location.state?.roomId || localStorage.getItem("last_room_id") || "";
+  const [roomId, setRoomId] = useState(restoredRoomId);
+  const [activeRoomId, setActiveRoomId] = useState(restoredRoomId);
   const [messages, setMessages] = useState([]);
   const [quiz, setQuiz] = useState(null);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [sharing, setSharing] = useState(false);
+  const [activeScreenSharer, setActiveScreenSharer] = useState(null);
+  const [uploadFile, setUploadFile] = useState(null);
+  const [quizQuestions, setQuizQuestions] = useState([]);
+  const [selectedAnswers, setSelectedAnswers] = useState({});
+  const [quizSubmitted, setQuizSubmitted] = useState(false);
+  const [quizScore, setQuizScore] = useState(0);
+  const [quizStatus, setQuizStatus] = useState("");
 
   const socket = useMemo(() => {
     if (!auth?.token) {
@@ -56,6 +66,28 @@ const ClassroomPage = () => {
       setMessages((prev) => [...prev, message]);
     });
 
+    socket.on("new-quiz", (payload) => {
+      const incomingQuestions = payload?.questions || [];
+      if (!incomingQuestions.length) {
+        return;
+      }
+      setQuizQuestions(incomingQuestions);
+      setSelectedAnswers({});
+      setQuizSubmitted(false);
+      setQuizScore(0);
+      setQuizStatus(`Quiz received${payload?.title ? `: ${payload.title}` : ""}`);
+    });
+
+    socket.on("screen-share-started", (payload) => {
+      setActiveScreenSharer(payload || null);
+    });
+
+    socket.on("screen-share-stopped", (payload) => {
+      if (!payload?.socketId || payload.socketId === activeScreenSharer?.socketId) {
+        setActiveScreenSharer(null);
+      }
+    });
+
     socket.on("connect_error", onSocketAuthError);
 
     socket.on("room:removed", () => {
@@ -68,10 +100,13 @@ const ClassroomPage = () => {
     });
 
     return () => {
+      socket.off("new-quiz");
+      socket.off("screen-share-started");
+      socket.off("screen-share-stopped");
       socket.off("connect_error", onSocketAuthError);
       socket.disconnect();
     };
-  }, [socket, logout, navigate]);
+  }, [socket, logout, navigate, activeScreenSharer?.socketId]);
 
   useEffect(() => {
     if (!socket || !activeRoomId) {
@@ -90,6 +125,9 @@ const ClassroomPage = () => {
         },
         (ack) => {
           console.log("[socket] join-room ack", ack);
+          if (Array.isArray(ack?.participants)) {
+            console.log("[socket] join-room participants synced", ack.participantCount ?? ack.participants.length);
+          }
         }
       );
     };
@@ -106,6 +144,16 @@ const ClassroomPage = () => {
       socket.off("connect", emitJoinRoom);
     };
   }, [socket, activeRoomId, currentUser?.id, currentUser?.name, currentUser?.role]);
+
+  useEffect(() => {
+    const nextRoomId = location.state?.roomId;
+    if (!nextRoomId || nextRoomId === activeRoomId) {
+      return;
+    }
+
+    setRoomId(nextRoomId);
+    setActiveRoomId(nextRoomId);
+  }, [location.state?.roomId, activeRoomId]);
 
   const { localVideoRef, participants, remoteStreams, toggleAudio, toggleVideo, shareScreen } = useWebRTC({
     socket,
@@ -137,6 +185,9 @@ const ClassroomPage = () => {
       },
       (ack) => {
         console.log("[socket] join-room ack", ack);
+        if (Array.isArray(ack?.participants)) {
+          console.log("[socket] join-room participants synced", ack.participantCount ?? ack.participants.length);
+        }
       }
     );
   };
@@ -190,6 +241,66 @@ const ClassroomPage = () => {
     setQuiz(response.data);
   };
 
+  const handleUploadFile = (event) => {
+    const file = event.target.files?.[0] || null;
+    setUploadFile(file);
+  };
+
+  const handleGenerateQuizFromFile = async () => {
+    if (!uploadFile) {
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", uploadFile);
+
+    try {
+      const response = await aiClient.post("/upload", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data"
+        }
+      });
+
+      const questions = response.data?.questions || [];
+      setQuizQuestions(questions);
+      setQuizStatus(`Generated ${questions.length} MCQs from ${uploadFile.name}`);
+    } catch (apiError) {
+      console.error("[quiz] upload failed", apiError?.response?.data || apiError);
+      setQuizStatus("Failed to generate quiz from file");
+    }
+  };
+
+  const handlePublishQuiz = () => {
+    if (!socket || !activeRoomId || !quizQuestions.length) {
+      return;
+    }
+
+    const payload = {
+      roomId: activeRoomId,
+      title: uploadFile?.name || "Class Quiz",
+      questions: quizQuestions
+    };
+
+    socket.emit("new-quiz", payload);
+    setQuizStatus("Quiz sent to students");
+  };
+
+  const handleSelectAnswer = (questionIndex, option) => {
+    setSelectedAnswers((prev) => ({
+      ...prev,
+      [questionIndex]: option
+    }));
+  };
+
+  const handleSubmitQuiz = () => {
+    const score = quizQuestions.reduce((total, question, index) => {
+      return selectedAnswers[index] === question.answer ? total + 1 : total;
+    }, 0);
+
+    setQuizScore(score);
+    setQuizSubmitted(true);
+  };
+
   const toggleMic = () => {
     const next = !audioEnabled;
     setAudioEnabled(next);
@@ -205,9 +316,22 @@ const ClassroomPage = () => {
   };
 
   const handleShare = async () => {
-    await shareScreen();
-    const next = !sharing;
+    const next = await shareScreen();
     setSharing(next);
+    if (socket && activeRoomId) {
+      if (next) {
+        socket.emit("screen-share-started", {
+          roomId: activeRoomId,
+          socketId: socket.id,
+          name: currentUser?.name
+        });
+      } else {
+        socket.emit("screen-share-stopped", {
+          roomId: activeRoomId,
+          socketId: socket.id
+        });
+      }
+    }
     socket?.emit("room:update-state", { roomId: activeRoomId, patch: { isSharingScreen: next } });
   };
 
@@ -223,6 +347,13 @@ const ClassroomPage = () => {
     }
   }, [activeRoomId]);
 
+  const participantScreenSharer = participants.find((participant) => participant.isSharingScreen);
+  const screenSharer =
+    participantScreenSharer ||
+    (sharing && socket?.id
+      ? { socketId: socket.id, name: currentUser?.name || "Instructor" }
+      : activeScreenSharer);
+
   return (
     <div className="min-h-screen bg-slate-50 p-4">
       <header className="mx-auto mb-4 flex max-w-7xl items-center justify-between">
@@ -232,7 +363,10 @@ const ClassroomPage = () => {
         </div>
         <div className="flex items-center gap-2">
           {currentUser.role === "instructor" && (
-            <button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white" onClick={() => navigate("/dashboard")}>
+            <button
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white"
+              onClick={() => navigate("/dashboard", { state: { roomId: activeRoomId || roomId } })}
+            >
               Dashboard
             </button>
           )}
@@ -281,6 +415,7 @@ const ClassroomPage = () => {
               participants={participants}
               selfName={currentUser.name}
               selfSocketId={socket?.id}
+              screenSharer={screenSharer}
             />
             <ControlsBar
               audioEnabled={audioEnabled}
@@ -301,6 +436,20 @@ const ClassroomPage = () => {
 
           <section className="grid gap-4">
             <ChatSidebar messages={messages} onSend={sendMessage} />
+            <QuizPanel
+              role={currentUser.role}
+              uploadFile={uploadFile}
+              onFileChange={handleUploadFile}
+              onGenerateQuiz={handleGenerateQuizFromFile}
+              onPublishQuiz={handlePublishQuiz}
+              questions={quizQuestions}
+              selectedAnswers={selectedAnswers}
+              onSelectAnswer={handleSelectAnswer}
+              submitted={quizSubmitted}
+              onSubmitQuiz={handleSubmitQuiz}
+              score={quizScore}
+              status={quizStatus}
+            />
             {currentUser.role === "student" && (
               <EmotionSidebar
                 currentEmotion={currentEmotion}

@@ -61,7 +61,6 @@ export const registerSocketHandlers = (io) => {
         });
       }
 
-      const existingParticipants = getParticipants(roomId);
       socket.join(roomId);
 
       const participant = {
@@ -75,23 +74,30 @@ export const registerSocketHandlers = (io) => {
       };
 
       addParticipant(roomId, participant);
+      const participants = getParticipants(roomId);
       logSocket(socket, "joined room", {
         roomId,
-        existingCount: existingParticipants.length
+        existingCount: Math.max(0, participants.length - 1)
       });
 
-      socket.emit("room:participants", existingParticipants);
+      socket.emit("room:participants", participants);
       socket.to(roomId).emit("user-connected", participant);
       socket.to(roomId).emit("room:user-joined", participant);
-      const participants = getParticipants(roomId);
       io.to(roomId).emit("room:participants", participants);
       if (typeof callback === "function") {
-        callback({ ok: true, roomId, participants: participants.length });
+        callback({ ok: true, roomId, participants, participantCount: participants.length });
       }
     };
 
     socket.on("join-room", joinRoom);
     socket.on("room:join", joinRoom);
+
+    socket.on("room:get-participants", ({ roomId } = {}) => {
+      if (!roomId) {
+        return;
+      }
+      socket.emit("room:participants", getParticipants(roomId));
+    });
 
     const forwardOffer = ({ targetSocketId, to, sdp, offer }) => {
       const recipientSocketId = targetSocketId || to;
@@ -152,6 +158,47 @@ export const registerSocketHandlers = (io) => {
         senderRole: socket.user.role,
         message,
         timestamp: new Date().toISOString()
+      });
+    });
+
+    socket.on("screen-share-started", ({ roomId, socketId, name }) => {
+      if (!roomId) {
+        return;
+      }
+
+      socket.to(roomId).emit("screen-share-started", {
+        roomId,
+        socketId: socketId || socket.id,
+        name: name || socket.user.name
+      });
+    });
+
+    socket.on("screen-share-stopped", ({ roomId, socketId }) => {
+      if (!roomId) {
+        return;
+      }
+
+      socket.to(roomId).emit("screen-share-stopped", {
+        roomId,
+        socketId: socketId || socket.id
+      });
+    });
+
+    socket.on("new-quiz", ({ roomId, questions, title }) => {
+      if (!roomId || !Array.isArray(questions) || !questions.length) {
+        return;
+      }
+
+      if (socket.user.role !== "instructor") {
+        return;
+      }
+
+      io.to(roomId).emit("new-quiz", {
+        roomId,
+        title: title || "Class Quiz",
+        questions,
+        fromSocketId: socket.id,
+        instructor: socket.user.name
       });
     });
 

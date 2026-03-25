@@ -14,11 +14,39 @@ const RTC_CONFIG = {
 export const useWebRTC = ({ socket, roomId, enabled, currentUser }) => {
   const localVideoRef = useRef(null);
   const localStreamRef = useRef(null);
+  const screenStreamRef = useRef(null);
   const peerConnectionsRef = useRef(new Map());
   const pendingIceRef = useRef(new Map());
   const joinedRoomRef = useRef("");
   const [participants, setParticipants] = useState([]);
   const [remoteStreams, setRemoteStreams] = useState({});
+
+  const normalizeParticipants = useCallback((list) => {
+    return (Array.isArray(list) ? list : [])
+      .filter(Boolean)
+      .map((participant) => {
+        if (typeof participant === "string") {
+          return {
+            socketId: participant,
+            userId: participant,
+            name: `Participant ${participant.slice(0, 4)}`,
+            role: "student"
+          };
+        }
+
+        const socketId = participant.socketId || participant.userId || participant.id;
+        return {
+          socketId,
+          userId: participant.userId || participant.id || socketId,
+          name: participant.name || `Participant ${String(socketId).slice(0, 4)}`,
+          role: participant.role || "student",
+          isMuted: Boolean(participant.isMuted),
+          isCameraOff: Boolean(participant.isCameraOff),
+          isSharingScreen: Boolean(participant.isSharingScreen)
+        };
+      })
+      .filter((participant) => participant.socketId);
+  }, []);
 
   const updateRemoteStream = (socketId, stream) => {
     setRemoteStreams((prev) => ({ ...prev, [socketId]: stream }));
@@ -212,10 +240,30 @@ export const useWebRTC = ({ socket, roomId, enabled, currentUser }) => {
       },
       (ack) => {
         console.log("[socket] join-room ack", ack);
+        if (Array.isArray(ack?.participants)) {
+          const normalized = normalizeParticipants(ack.participants);
+          const selfParticipant = {
+            socketId: socket?.id,
+            userId: currentUser?.id || socket?.id,
+            name: currentUser?.name || "You",
+            role: currentUser?.role || "student"
+          };
+          const withSelf = normalized.some((item) => item.socketId === selfParticipant.socketId)
+            ? normalized
+            : [selfParticipant, ...normalized].filter((item) => item.socketId);
+
+          setParticipants(withSelf);
+          normalized.forEach((participant) => {
+            if (participant.socketId !== socket?.id) {
+              connectToNewUser(participant.socketId);
+            }
+          });
+        }
       }
     );
+    socket.emit("room:get-participants", { roomId });
     joinedRoomRef.current = joinKey;
-  }, [socket, roomId, currentUser?.id, currentUser?.name, currentUser?.role]);
+  }, [socket, roomId, currentUser?.id, currentUser?.name, currentUser?.role, connectToNewUser, normalizeParticipants]);
 
   useEffect(() => {
     if (!socket || !roomId || !enabled) {
@@ -237,34 +285,20 @@ export const useWebRTC = ({ socket, roomId, enabled, currentUser }) => {
       if (!mounted) {
         return;
       }
-      const normalized = (Array.isArray(list) ? list : [])
-        .filter(Boolean)
-        .map((participant) => {
-          if (typeof participant === "string") {
-            return {
-              socketId: participant,
-              userId: participant,
-              name: `Participant ${participant.slice(0, 4)}`,
-              role: "student"
-            };
-          }
+      const normalized = normalizeParticipants(list);
+      const selfParticipant = {
+        socketId: socket?.id,
+        userId: currentUser?.id || socket?.id,
+        name: currentUser?.name || "You",
+        role: currentUser?.role || "student"
+      };
+      const withSelf = normalized.some((item) => item.socketId === selfParticipant.socketId)
+        ? normalized
+        : [selfParticipant, ...normalized].filter((item) => item.socketId);
 
-          const socketId = participant.socketId || participant.userId || participant.id;
-          return {
-            socketId,
-            userId: participant.userId || participant.id || socketId,
-            name: participant.name || `Participant ${String(socketId).slice(0, 4)}`,
-            role: participant.role || "student",
-            isMuted: Boolean(participant.isMuted),
-            isCameraOff: Boolean(participant.isCameraOff),
-            isSharingScreen: Boolean(participant.isSharingScreen)
-          };
-        })
-        .filter((participant) => participant.socketId);
-
-      console.log("[socket] room participants", normalized);
-      setParticipants(normalized);
-      normalized.forEach((participant) => {
+      console.log("[socket] room participants", withSelf);
+      setParticipants(withSelf);
+      withSelf.forEach((participant) => {
         if (participant.socketId !== socket.id) {
           connectToNewUser(participant.socketId);
         }
@@ -389,10 +423,15 @@ export const useWebRTC = ({ socket, roomId, enabled, currentUser }) => {
     socket.on("answer", onAnswer);
     socket.on("ice-candidate", onIceCandidate);
 
+    const participantSyncTimer = setInterval(() => {
+      socket.emit("room:get-participants", { roomId });
+    }, 3000);
+
     bootstrap();
 
     return () => {
       mounted = false;
+      clearInterval(participantSyncTimer);
       joinedRoomRef.current = "";
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
@@ -406,6 +445,10 @@ export const useWebRTC = ({ socket, roomId, enabled, currentUser }) => {
       peerConnectionsRef.current.forEach((connection) => connection.close());
       peerConnectionsRef.current.clear();
       pendingIceRef.current.clear();
+      if (screenStreamRef.current) {
+        screenStreamRef.current.getTracks().forEach((track) => track.stop());
+        screenStreamRef.current = null;
+      }
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => track.stop());
         localStreamRef.current = null;
@@ -416,6 +459,7 @@ export const useWebRTC = ({ socket, roomId, enabled, currentUser }) => {
     roomId,
     enabled,
     connectToNewUser,
+    normalizeParticipants,
     ensurePeerConnection,
     flushPendingIce,
     initializeLocalMedia,
@@ -436,9 +480,42 @@ export const useWebRTC = ({ socket, roomId, enabled, currentUser }) => {
     });
   };
 
-  const shareScreen = async () => {
+  const stopScreenShare = useCallback(() => {
+    const activeScreenStream = screenStreamRef.current;
+    if (!activeScreenStream) {
+      return false;
+    }
+
+    activeScreenStream.getTracks().forEach((track) => {
+      track.onended = null;
+      track.stop();
+    });
+    screenStreamRef.current = null;
+
+    const cameraTrack = localStreamRef.current?.getVideoTracks()[0];
+    peerConnectionsRef.current.forEach((connection) => {
+      const sender = connection.getSenders().find((item) => item.track?.kind === "video");
+      if (sender && cameraTrack) {
+        sender.replaceTrack(cameraTrack);
+      }
+    });
+
+    if (localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+      localVideoRef.current.play().catch(() => {});
+    }
+
+    return false;
+  }, []);
+
+  const shareScreen = useCallback(async () => {
+    if (screenStreamRef.current) {
+      return stopScreenShare();
+    }
+
     const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
     const screenTrack = screenStream.getVideoTracks()[0];
+    screenStreamRef.current = screenStream;
 
     peerConnectionsRef.current.forEach((connection) => {
       const sender = connection.getSenders().find((item) => item.track?.kind === "video");
@@ -452,20 +529,12 @@ export const useWebRTC = ({ socket, roomId, enabled, currentUser }) => {
       localVideoRef.current.play().catch(() => {});
     }
 
-    screenTrack.onended = async () => {
-      const cameraTrack = localStreamRef.current?.getVideoTracks()[0];
-      peerConnectionsRef.current.forEach((connection) => {
-        const sender = connection.getSenders().find((item) => item.track?.kind === "video");
-        if (sender && cameraTrack) {
-          sender.replaceTrack(cameraTrack);
-        }
-      });
-      if (localVideoRef.current && localStreamRef.current) {
-        localVideoRef.current.srcObject = localStreamRef.current;
-        localVideoRef.current.play().catch(() => {});
-      }
+    screenTrack.onended = () => {
+      stopScreenShare();
     };
-  };
+
+    return true;
+  }, [stopScreenShare]);
 
   return {
     localVideoRef,
