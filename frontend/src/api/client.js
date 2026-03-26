@@ -1,7 +1,24 @@
 import axios from "axios";
 
-const SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL || "http://localhost:3000";
-const API = import.meta.env.VITE_AI_API_URL;
+const isLocalHost = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+
+const defaultSignalingUrl = isLocalHost
+  ? "http://localhost:3000"
+  : "https://emotion-signaling.onrender.com";
+
+const defaultAiApiUrl = isLocalHost
+  ? "http://localhost:5001"
+  : "https://emotion-ai-backend-rwgf.onrender.com";
+
+const normalizeBaseUrl = (value) => (value || "").replace(/\/$/, "");
+
+const SIGNALING_URL = normalizeBaseUrl(import.meta.env.VITE_SIGNALING_URL || defaultSignalingUrl);
+const API = normalizeBaseUrl(
+  import.meta.env.VITE_AI_API_URL ||
+    import.meta.env.VITE_API_BASE_URL ||
+    import.meta.env.VITE_API_URL ||
+    defaultAiApiUrl
+);
 const AI_URL = API;
 
 console.log("API URL:", API);
