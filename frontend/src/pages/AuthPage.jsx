@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { signalingClient, attachAuthToken, loginWithBackend } from "../api/client";
+import { attachAuthToken, loginWithBackend, registerWithBackend } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 
 const AuthPage = () => {
@@ -30,16 +30,13 @@ const AuthPage = () => {
         return;
       }
 
-      const response = await signalingClient.post("/api/auth/register", {
+      const response = await registerWithBackend(form.email, form.password, {
         name: form.name,
-        email: form.email,
-        password: form.password,
         role: form.role
       });
 
-      const authPayload = { token: response.data.token, user: response.data.user };
-      login(authPayload);
-      attachAuthToken(response.data.token);
+      login(response);
+      attachAuthToken(response.token);
       navigate("/classroom");
     } catch (err) {
       setError(err.message);

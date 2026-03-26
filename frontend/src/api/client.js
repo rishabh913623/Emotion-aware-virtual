@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL || "http://localhost:3000";
-const API = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_AI_API_URL || "http://localhost:5001";
+const API = import.meta.env.VITE_AI_API_URL;
 const AI_URL = API;
 
 console.log("API URL:", API);
@@ -22,49 +22,45 @@ export const attachAuthToken = (token) => {
 };
 
 export const loginWithBackend = async (email, password) => {
-  const identifier = (email || "").trim();
-  const username = identifier.includes("@") ? identifier.split("@")[0] : identifier;
+  console.log("LOGIN API:", `${API}/auth/login`);
 
-  console.log("API URL:", API);
-  console.log("Login payload:", { email: identifier, password });
+  const res = await fetch(`${API}/auth/login`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ email, password })
+  });
 
-  const endpoints = [`${API}/auth/login`, `${API}/login`];
+  const data = await res.json();
 
-  for (const endpoint of endpoints) {
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ email: identifier, password, username })
-      });
-
-      const data = await response.json().catch(() => ({}));
-
-      if (response.status === 404 && endpoint.endsWith("/auth/login")) {
-        continue;
-      }
-
-      if (!response.ok) {
-        throw new Error(data.error || "Login failed");
-      }
-
-      if (data?.token) {
-        localStorage.setItem("token", data.token);
-      }
-
-      return data;
-    } catch (err) {
-      if (endpoint.endsWith("/auth/login") && err.message === "Failed to fetch") {
-        continue;
-      }
-      console.error("Login error:", err.message);
-      throw err;
-    }
+  if (!res.ok) {
+    throw new Error(data.error || "Login failed");
   }
 
-  const error = new Error("Login failed");
-  console.error("Login error:", error.message);
-  throw error;
+  if (data?.token) {
+    localStorage.setItem("token", data.token);
+  }
+
+  return data;
+};
+
+export const registerWithBackend = async (email, password, extra = {}) => {
+  console.log("REGISTER API:", `${API}/auth/register`);
+
+  const res = await fetch(`${API}/auth/register`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ email, password, ...extra })
+  });
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new Error(data.error || "Register failed");
+  }
+
+  return data;
 };
