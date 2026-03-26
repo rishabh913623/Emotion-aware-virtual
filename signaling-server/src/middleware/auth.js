@@ -8,7 +8,17 @@ export const requireAuth = (req, res, next) => {
 
   const token = authHeader.slice("Bearer ".length);
   try {
-    req.user = verifyToken(token);
+    const payload = verifyToken(token);
+    const normalizedId = payload?.id ?? payload?.user_id ?? payload?.student_id ?? null;
+
+    if (!normalizedId) {
+      return res.status(401).json({ error: "Invalid token payload: missing user id" });
+    }
+
+    req.user = {
+      ...payload,
+      id: normalizedId
+    };
     return next();
   } catch (error) {
     return res.status(401).json({ error: "Invalid token" });
