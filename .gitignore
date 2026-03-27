@@ -24,3 +24,6 @@ backend/.env
 .DS_Store
 .vscode/
 .idea/
+
+# Local Python virtualenvs
+backend/.venv*/

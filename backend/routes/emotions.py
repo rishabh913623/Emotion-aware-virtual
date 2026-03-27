@@ -29,6 +29,13 @@ def get_room_emotions(room_id):
     try:
         limit = int(request.args.get("limit", 500))
         rows = fetch_emotions_by_room(room_id, limit)
-        return jsonify(rows)
+        normalized_rows = [
+            {
+                **row,
+                "time": str(row.get("timestamp")),
+            }
+            for row in rows
+        ]
+        return jsonify(normalized_rows)
     except Exception as exc:  # pragma: no cover - defensive error handling
         return jsonify({"error": "Failed to fetch room emotions", "details": str(exc)}), 500

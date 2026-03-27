@@ -17,18 +17,27 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineEleme
 const EMOTION_SCORE_MAP = {
   Engaged: 5,
   Happy: 5,
+  happy: 5,
   Neutral: 3,
+  neutral: 3,
   Confused: 2,
+  confused: 2,
   Distracted: 2,
+  distracted: 2,
   Bored: 1,
+  bored: 1,
   Sad: 1,
+  sad: 1,
   "No Face": 0,
   Unavailable: 0,
   Uncertain: 0
 };
 
 const EmotionChart = ({ counts, timeline = [], roomId = "" }) => {
-  const labels = ["Engaged", "Confused", "Bored", "Distracted", "Neutral"];
+  const labels = ["Engaged", "Happy", "Neutral", "Confused", "Distracted", "Bored", "Sad"];
+  const normalizedTimeline = [...timeline].sort(
+    (left, right) => new Date(left.timestamp || left.time || 0) - new Date(right.timestamp || right.time || 0)
+  );
 
   const data = {
     labels,
@@ -36,17 +45,17 @@ const EmotionChart = ({ counts, timeline = [], roomId = "" }) => {
       {
         label: "Emotion Distribution",
         data: labels.map((label) => counts[label] || 0),
-        backgroundColor: ["#2563eb", "#f59e0b", "#ef4444", "#8b5cf6", "#10b981"]
+        backgroundColor: ["#2563eb", "#22c55e", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444", "#f97316"]
       }
     ]
   };
 
   const timelineData = {
-    labels: timeline.map((entry) => new Date(entry.timestamp).toLocaleTimeString()),
+    labels: normalizedTimeline.map((entry) => new Date(entry.timestamp || entry.time).toLocaleTimeString()),
     datasets: [
       {
         label: roomId ? `Room ${roomId} Emotion Trend` : "Room Emotion Trend",
-        data: timeline.map((entry) => EMOTION_SCORE_MAP[entry.emotion] ?? 0),
+        data: normalizedTimeline.map((entry) => EMOTION_SCORE_MAP[entry.emotion] ?? 2),
         borderColor: "#4f46e5",
         backgroundColor: "rgba(79, 70, 229, 0.2)",
         tension: 0.25,

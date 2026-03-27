@@ -7,17 +7,13 @@ import { useAuth } from "../context/AuthContext";
 import EmotionChart from "../components/dashboard/EmotionChart";
 import StudentEmotionTable from "../components/dashboard/StudentEmotionTable";
 
-const EMOTION_SCORE_MAP = {
-  Engaged: 5,
-  Happy: 5,
-  Neutral: 3,
-  Confused: 2,
-  Distracted: 2,
-  Bored: 1,
-  Sad: 1,
-  "No Face": 0,
-  Uncertain: 0,
-  Unavailable: 0
+const mapEmotion = (emotion) => {
+  const normalized = String(emotion || "").trim().toLowerCase();
+  if (["engaged", "happy"].includes(normalized)) return 5;
+  if (normalized === "neutral") return 3;
+  if (["confused", "distracted"].includes(normalized)) return 2;
+  if (["bored", "sad"].includes(normalized)) return 1;
+  return 2;
 };
 
 const DashboardPage = () => {
@@ -39,7 +35,7 @@ const DashboardPage = () => {
     if (!timelineSource.length) {
       return 0;
     }
-    const scores = timelineSource.map((entry) => EMOTION_SCORE_MAP[entry.emotion] ?? 0);
+    const scores = timelineSource.map((entry) => mapEmotion(entry.emotion));
     const total = scores.reduce((sum, score) => sum + score, 0);
     return total / scores.length;
   }, [timelineSource]);
@@ -73,7 +69,7 @@ const DashboardPage = () => {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 10000);
+    const interval = setInterval(fetchData, 5000);
 
     aiSocket.on("emotion_update", (payload) => {
       setCounts((prev) => ({
@@ -99,7 +95,8 @@ const DashboardPage = () => {
             room_id: payload.room_id,
             emotion: payload.emotion,
             confidence: payload.confidence,
-            timestamp: payload.timestamp
+            timestamp: payload.timestamp,
+            time: payload.timestamp
           }
         ].slice(-300));
       }
@@ -160,7 +157,7 @@ const DashboardPage = () => {
           <p className="mt-2 text-xs text-slate-500">High: attentive class, Medium: mixed focus, Low: needs intervention.</p>
         </div>
 
-        <EmotionChart counts={counts} timeline={roomHistory} roomId={roomId} />
+        <EmotionChart counts={counts} timeline={timelineSource} roomId={roomId} />
         <StudentEmotionTable rows={studentWise} />
 
         <div className="rounded-xl border border-slate-200 bg-white p-4 lg:col-span-2">

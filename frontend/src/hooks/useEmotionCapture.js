@@ -15,18 +15,25 @@ export const useEmotionCapture = ({ enabled, userId, roomId, videoRef }) => {
       return undefined;
     }
 
-    const capture = async () => {
+    const captureFrame = () => {
       const video = videoRef.current;
       if (!video?.videoWidth || !video?.videoHeight) {
-        console.log("[emotion] video not ready, skipping frame capture");
-        return;
+        return null;
       }
+
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       const context = canvas.getContext("2d");
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      if (!context) {
+        return null;
+      }
 
-      const imageBase64 = canvas.toDataURL("image/jpeg", 0.8);
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", 0.8);
+    };
+
+    const capture = async () => {
+      const imageBase64 = captureFrame();
 
       try {
         const response = await aiClient.post("/predict", {

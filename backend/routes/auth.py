@@ -10,19 +10,44 @@ from utils.db import get_db_connection
 
 auth_bp = Blueprint("auth", __name__)
 
+DEMO_USERS = [
+    {"name": "student", "role": "student", "email": "student@demo.local", "password": "student123"},
+    {"name": "instructor", "role": "instructor", "email": "instructor@demo.local", "password": "instructor123"},
+]
+
 
 def ensure_users_table() -> None:
     """Ensure baseline users table exists for authentication."""
     query = """
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
+            name VARCHAR(120),
+            role VARCHAR(20),
             email TEXT UNIQUE,
             password TEXT
         );
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(120);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20);
     """
     with get_db_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(query)
+
+
+def ensure_demo_users() -> None:
+    """Seed demo users for local development login if missing."""
+    ensure_users_table()
+    with get_db_connection() as connection:
+        with connection.cursor() as cursor:
+            for demo_user in DEMO_USERS:
+                cursor.execute(
+                    """
+                    INSERT INTO users (name, role, email, password)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (email) DO NOTHING
+                    """,
+                    (demo_user["name"], demo_user["role"], demo_user["email"], demo_user["password"]),
+                )
 
 
 def create_token(payload: dict) -> str:
@@ -49,19 +74,27 @@ def login():
     print("LOGIN REQUEST:", request.json)
 
     data = request.get_json() or {}
-    email = (data.get("email") or data.get("username") or "").strip()
+    identifier = (data.get("email") or data.get("username") or "").strip()
     password = data.get("password", "")
 
-    if not email or not password:
+    if not identifier or not password:
         return jsonify({"error": "email/username and password are required"}), 400
 
     try:
-        ensure_users_table()
+        ensure_demo_users()
         with get_db_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "SELECT id, email, password FROM users WHERE email=%s",
-                    (email,)
+                    """
+                    SELECT id, name, role, email, password
+                    FROM users
+                    WHERE lower(email) = lower(%s)
+                       OR lower(split_part(email, '@', 1)) = lower(%s)
+                       OR lower(name) = lower(%s)
+                    ORDER BY id ASC
+                    LIMIT 1
+                    """,
+                    (identifier, identifier, identifier)
                 )
                 user = cursor.fetchone()
     except psycopg2.Error as exc:
@@ -70,16 +103,19 @@ def login():
     if not user:
         return jsonify({"error": "User not found"}), 401
 
-    stored_password = user["password"] if isinstance(user, dict) else user[2]
+    stored_password = user["password"] if isinstance(user, dict) else user[4]
     if password != stored_password:
         return jsonify({"error": "Invalid credentials"}), 401
 
     user_id = user["id"] if isinstance(user, dict) else user[0]
-    user_email = user["email"] if isinstance(user, dict) else user[1]
-    role = data.get("role") or "student"
+    user_name = user["name"] if isinstance(user, dict) else user[1]
+    user_role = user["role"] if isinstance(user, dict) else user[2]
+    user_email = user["email"] if isinstance(user, dict) else user[3]
+    role = user_role or data.get("role") or "student"
+    username = user_name or (user_email.split("@")[0] if "@" in user_email else user_email)
 
     token = create_token({
-        "username": user_email.split("@")[0] if "@" in user_email else user_email,
+        "username": username,
         "email": user_email,
         "role": role,
         "student_id": user_id,
@@ -88,6 +124,7 @@ def login():
     return jsonify({
         "message": "Login successful",
         "user_id": user_id,
+        "username": username,
         "email": user_email,
         "token": token,
         "role": role,
@@ -120,17 +157,10 @@ def register():
                 if existing_user:
                     return jsonify({"error": "User already exists"}), 400
 
-                try:
-                    cursor.execute(
-                        "INSERT INTO users (email, password) VALUES (%s, %s) RETURNING id, email",
-                        (email, password)
-                    )
-                except Exception:
-                    connection.rollback()
-                    cursor.execute(
-                        "INSERT INTO users (name, role, email, password) VALUES (%s, %s, %s, %s) RETURNING id, email",
-                        (name, role, email, password)
-                    )
+                cursor.execute(
+                    "INSERT INTO users (name, role, email, password) VALUES (%s, %s, %s, %s) RETURNING id, email",
+                    (name, role, email, password)
+                )
 
                 created_user = cursor.fetchone()
     except psycopg2.Error as exc:
