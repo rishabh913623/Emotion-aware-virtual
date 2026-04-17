@@ -16,6 +16,30 @@ from socketio_instance import socketio
 emotions_bp = Blueprint("emotions", __name__)
 
 
+@emotions_bp.route("/emotion-data", methods=["GET"])
+def get_emotion_data():
+    """Return raw emotion metadata events for dashboard computations."""
+    try:
+        room_id = request.args.get("room_id")
+        limit = int(request.args.get("limit", 500))
+
+        rows = fetch_emotions_by_room(room_id, limit) if room_id else fetch_emotions(limit)
+        normalized_rows = [
+            {
+                "student_id": row.get("student_id") or row.get("user_id"),
+                "room_id": row.get("room_id"),
+                "emotion": row.get("emotion"),
+                "confidence": float(row.get("confidence") or 0),
+                "timestamp": str(row.get("timestamp")),
+            }
+            for row in rows
+        ]
+
+        return jsonify(normalized_rows)
+    except Exception as exc:  # pragma: no cover - defensive error handling
+        return jsonify({"error": "Failed to fetch emotion data", "details": str(exc)}), 500
+
+
 @emotions_bp.route("/emotion-data", methods=["POST"])
 def ingest_emotion_data():
     """Store metadata-only emotion signal from frontend detectors."""

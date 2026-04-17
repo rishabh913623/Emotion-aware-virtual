@@ -2,20 +2,16 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { aiClient } from "../api/client";
-import { createAiSocket } from "../api/socket";
 import { useAuth } from "../context/AuthContext";
 import EmotionChart from "../components/dashboard/EmotionChart";
 import StudentEmotionTable from "../components/dashboard/StudentEmotionTable";
-
-const mapEmotion = (emotion) => {
-  const normalized = String(emotion || "").trim().toLowerCase();
-  if (["engaged", "happy"].includes(normalized)) return 5;
-  if (["surprised"].includes(normalized)) return 4;
-  if (normalized === "neutral") return 3;
-  if (["confused", "distracted"].includes(normalized)) return 2;
-  if (["bored", "sad", "angry", "fearful", "disgusted"].includes(normalized)) return 1;
-  return 2;
-};
+import {
+  getEmotionDistribution,
+  getStudentStats,
+  getTrendData,
+  getAverageScore,
+  getEngagementLevel,
+} from "../utils/dashboardTransforms";
 
 const DashboardPage = () => {
   const navigate = useNavigate();
@@ -29,40 +25,46 @@ const DashboardPage = () => {
   const [roomHistory, setRoomHistory] = useState([]);
   const [error, setError] = useState("");
 
-  const aiSocket = useMemo(() => createAiSocket(), []);
-
   const timelineSource = roomHistory.length ? roomHistory : history;
   const averageEmotionScore = useMemo(() => {
-    if (!timelineSource.length) {
-      return 0;
-    }
-    const scores = timelineSource.map((entry) => mapEmotion(entry.emotion));
-    const total = scores.reduce((sum, score) => sum + score, 0);
-    return total / scores.length;
-  }, [timelineSource]);
+    return getAverageScore(history);
+  }, [history]);
 
   const engagementLevel = useMemo(() => {
-    if (averageEmotionScore >= 3.8) {
-      return "High";
+    return getEngagementLevel(counts);
+  }, [counts]);
+
+  const normalizeEmotionRows = (payload) => {
+    if (Array.isArray(payload)) {
+      return payload;
     }
-    if (averageEmotionScore >= 2.4) {
-      return "Medium";
+
+    if (Array.isArray(payload?.history)) {
+      return payload.history;
     }
-    return "Low";
-  }, [averageEmotionScore]);
+
+    if (Array.isArray(payload?.data)) {
+      return payload.data;
+    }
+
+    return [];
+  };
 
   const fetchData = async () => {
     try {
-      const [summaryResponse, aggregateResponse, roomResponse] = await Promise.all([
-        aiClient.get(`/emotion-data/summary?window_size=10&distribution_limit=500${roomId ? `&room_id=${encodeURIComponent(roomId)}` : ""}`),
-        aiClient.get("/emotions?limit=300"),
-        roomId ? aiClient.get(`/emotions/${encodeURIComponent(roomId)}?limit=300`) : Promise.resolve({ data: [] })
-      ]);
+      const response = await aiClient.get("/emotion-data", {
+        params: {
+          limit: 500,
+          ...(roomId ? { room_id: roomId } : {})
+        }
+      });
+      const rows = normalizeEmotionRows(response.data);
+      const normalizedRows = [...rows].sort((left, right) => new Date(right.timestamp || 0) - new Date(left.timestamp || 0));
 
-      setCounts(summaryResponse.data.class_distribution || aggregateResponse.data.counts || {});
-      setHistory(aggregateResponse.data.history || []);
-      setStudentWise(summaryResponse.data.student_rolling || aggregateResponse.data.student_wise || []);
-      setRoomHistory(Array.isArray(roomResponse.data) ? roomResponse.data : []);
+      setHistory(normalizedRows);
+      setCounts(getEmotionDistribution(normalizedRows));
+      setRoomHistory(getTrendData(normalizedRows));
+      setStudentWise(getStudentStats(normalizedRows));
       setError("");
     } catch (apiError) {
       setError("Failed to fetch dashboard data");
@@ -71,45 +73,12 @@ const DashboardPage = () => {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 5000);
-
-    aiSocket.on("emotion_update", (payload) => {
-      setCounts((prev) => ({
-        ...prev,
-        [payload.emotion]: (prev[payload.emotion] || 0) + 1
-      }));
-      setHistory((prev) => [
-        {
-          id: payload.timestamp,
-          student_id: payload.student_id,
-          emotion: payload.emotion,
-          confidence: payload.confidence,
-          timestamp: payload.timestamp
-        },
-        ...prev
-      ].slice(0, 50));
-
-      if (roomId && payload.room_id === roomId) {
-        setRoomHistory((prev) => [
-          ...prev,
-          {
-            user_id: String(payload.student_id),
-            room_id: payload.room_id,
-            emotion: payload.emotion,
-            confidence: payload.confidence,
-            timestamp: payload.timestamp,
-            time: payload.timestamp
-          }
-        ].slice(-300));
-      }
-    });
+    const interval = setInterval(fetchData, 15000);
 
     return () => {
       clearInterval(interval);
-      aiSocket.off("emotion_update");
-      aiSocket.disconnect();
     };
-  }, [aiSocket, roomId]);
+  }, [roomId]);
 
   if (!currentUser || currentUser.role !== "instructor") {
     return (
