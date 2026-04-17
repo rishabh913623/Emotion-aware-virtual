@@ -60,7 +60,7 @@ const drawOverlay = ({ overlay, video, detection, emotion, confidence }) => {
   context.fillText(text, textX, textY - 2);
 };
 
-export const useEmotionDetection = ({ enabled, videoRef, studentId, roomId, onDetection, onError }) => {
+export const useEmotionDetection = ({ enabled, videoRef, studentId, roomId, intervalMs, onDetection, onError }) => {
   const overlayRef = useRef(null);
   const busyRef = useRef(false);
 
@@ -70,7 +70,7 @@ export const useEmotionDetection = ({ enabled, videoRef, studentId, roomId, onDe
     }
 
     let cancelled = false;
-    const intervalMs = getEmotionDetectionIntervalMs();
+    const effectiveIntervalMs = getEmotionDetectionIntervalMs(intervalMs);
 
     const runDetection = async () => {
       if (cancelled || busyRef.current) {
@@ -129,14 +129,14 @@ export const useEmotionDetection = ({ enabled, videoRef, studentId, roomId, onDe
       }
     };
 
-    const timer = setInterval(runDetection, intervalMs);
+    const timer = setInterval(runDetection, effectiveIntervalMs);
     runDetection();
 
     return () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [enabled, videoRef, studentId, roomId, onDetection, onError]);
+  }, [enabled, videoRef, studentId, roomId, intervalMs, onDetection, onError]);
 
   return { overlayRef };
 };

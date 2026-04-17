@@ -11,15 +11,27 @@ const RTC_CONFIG = {
   ]
 };
 
-export const useWebRTC = ({ socket, roomId, enabled, currentUser }) => {
-  const localVideoRef = useRef(null);
-  const localStreamRef = useRef(null);
-  const screenStreamRef = useRef(null);
-  const peerConnectionsRef = useRef(new Map());
-  const pendingIceRef = useRef(new Map());
-  const joinedRoomRef = useRef("");
-  const [participants, setParticipants] = useState([]);
-  const [remoteStreams, setRemoteStreams] = useState({});
+export const useWebRTC = ({ socket, roomId, enabled, currentUser, sessionStore = null }) => {
+  const fallbackLocalVideoRef = useRef(null);
+  const fallbackLocalStreamRef = useRef(null);
+  const fallbackScreenStreamRef = useRef(null);
+  const fallbackPeerConnectionsRef = useRef(new Map());
+  const fallbackPendingIceRef = useRef(new Map());
+  const fallbackJoinedRoomRef = useRef("");
+
+  const localVideoRef = sessionStore?.localVideoRef || fallbackLocalVideoRef;
+  const localStreamRef = sessionStore?.localStreamRef || fallbackLocalStreamRef;
+  const screenStreamRef = sessionStore?.screenStreamRef || fallbackScreenStreamRef;
+  const peerConnectionsRef = sessionStore?.peerConnectionsRef || fallbackPeerConnectionsRef;
+  const pendingIceRef = sessionStore?.pendingIceRef || fallbackPendingIceRef;
+  const joinedRoomRef = sessionStore?.joinedRoomRef || fallbackJoinedRoomRef;
+
+  const fallbackParticipantsState = useState([]);
+  const fallbackRemoteStreamsState = useState({});
+  const participants = sessionStore?.participants ?? fallbackParticipantsState[0];
+  const setParticipants = sessionStore?.setParticipants ?? fallbackParticipantsState[1];
+  const remoteStreams = sessionStore?.remoteStreams ?? fallbackRemoteStreamsState[0];
+  const setRemoteStreams = sessionStore?.setRemoteStreams ?? fallbackRemoteStreamsState[1];
 
   const normalizeParticipants = useCallback((list) => {
     return (Array.isArray(list) ? list : [])
@@ -198,6 +210,11 @@ export const useWebRTC = ({ socket, roomId, enabled, currentUser }) => {
 
   const initializeLocalMedia = useCallback(async () => {
     if (localStreamRef.current) {
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+        localVideoRef.current.muted = true;
+        localVideoRef.current.play().catch(() => {});
+      }
       return localStreamRef.current;
     }
     const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
@@ -432,7 +449,6 @@ export const useWebRTC = ({ socket, roomId, enabled, currentUser }) => {
     return () => {
       mounted = false;
       clearInterval(participantSyncTimer);
-      joinedRoomRef.current = "";
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
       socket.off("room:participants", onParticipants);
@@ -442,6 +458,17 @@ export const useWebRTC = ({ socket, roomId, enabled, currentUser }) => {
       socket.off("offer", onOffer);
       socket.off("answer", onAnswer);
       socket.off("ice-candidate", onIceCandidate);
+
+      const shouldKeepAlive = Boolean(
+        sessionStore?.keepAliveOnUnmountRef?.current && roomId && enabled
+      );
+
+      if (shouldKeepAlive) {
+        return;
+      }
+
+      joinedRoomRef.current = "";
+
       peerConnectionsRef.current.forEach((connection) => connection.close());
       peerConnectionsRef.current.clear();
       pendingIceRef.current.clear();
@@ -458,6 +485,7 @@ export const useWebRTC = ({ socket, roomId, enabled, currentUser }) => {
     socket,
     roomId,
     enabled,
+    sessionStore?.keepAliveOnUnmountRef,
     connectToNewUser,
     normalizeParticipants,
     ensurePeerConnection,

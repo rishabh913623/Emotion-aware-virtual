@@ -6,12 +6,16 @@ const DEFAULT_MODEL_URL = "https://justadudewhohacks.github.io/face-api.js/model
 
 const normalizeModelUrl = (url) => (url || "").replace(/\/$/, "");
 
-export const getEmotionDetectionIntervalMs = () => {
-  const raw = Number(import.meta.env.VITE_EMOTION_DETECTION_INTERVAL_MS || 15000);
+export const getEmotionDetectionIntervalMs = (overrideMs) => {
+  const source = overrideMs ?? import.meta.env.VITE_EMOTION_DETECTION_INTERVAL_MS ?? 10000;
+  const raw = Number(source);
   if (Number.isNaN(raw)) {
-    return 15000;
+    return 10000;
   }
-  return Math.min(20000, Math.max(10000, raw));
+  if ([3000, 10000, 20000].includes(raw)) {
+    return raw;
+  }
+  return Math.min(20000, Math.max(3000, raw));
 };
 
 export const loadFaceApiModels = async () => {

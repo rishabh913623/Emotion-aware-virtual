@@ -9,6 +9,7 @@ const EmotionVideoTile = ({
   videoRef,
   muted = false,
   enableDetection = true,
+  detectionIntervalMs,
   onDetection,
   onError,
   videoClassName = "h-40 w-full rounded-lg object-cover",
@@ -33,6 +34,7 @@ const EmotionVideoTile = ({
     videoRef: targetVideoRef,
     studentId,
     roomId,
+    intervalMs: detectionIntervalMs,
     onDetection,
     onError
   });

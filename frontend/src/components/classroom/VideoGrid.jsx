@@ -13,6 +13,7 @@ const VideoGrid = ({
   enableEmotionDetection,
   onSelfEmotionDetected,
   onDetectionError,
+  detectionIntervalMs,
 }) => {
   const participantMap = new Map(
     participants
@@ -53,6 +54,7 @@ const VideoGrid = ({
                 enableDetection={enableEmotionDetection}
                 onDetection={onSelfEmotionDetected}
                 onError={onDetectionError}
+                detectionIntervalMs={detectionIntervalMs}
                 videoClassName="h-[26rem] w-full rounded-lg object-contain bg-black"
                 containerClassName="rounded-xl bg-slate-900 p-0"
               />
@@ -64,6 +66,7 @@ const VideoGrid = ({
                 roomId={roomId}
                 enableDetection={enableEmotionDetection}
                 onError={onDetectionError}
+                detectionIntervalMs={detectionIntervalMs}
                 videoClassName="h-[26rem] w-full rounded-lg object-contain bg-black"
                 containerClassName="rounded-xl bg-slate-900 p-0"
               />
@@ -92,6 +95,7 @@ const VideoGrid = ({
                   enableDetection={enableEmotionDetection}
                   onDetection={onSelfEmotionDetected}
                   onError={onDetectionError}
+                  detectionIntervalMs={detectionIntervalMs}
                   containerClassName="rounded-xl bg-blue-950 p-2"
                 />
               );
@@ -107,6 +111,7 @@ const VideoGrid = ({
                 roomId={roomId}
                 enableDetection={enableEmotionDetection}
                 onError={onDetectionError}
+                detectionIntervalMs={detectionIntervalMs}
               />
             );
           })}
@@ -126,6 +131,7 @@ const VideoGrid = ({
         enableDetection={enableEmotionDetection}
         onDetection={onSelfEmotionDetected}
         onError={onDetectionError}
+        detectionIntervalMs={detectionIntervalMs}
         containerClassName="rounded-xl bg-blue-950 p-2"
       />
 
@@ -140,6 +146,7 @@ const VideoGrid = ({
             roomId={roomId}
             enableDetection={enableEmotionDetection}
             onError={onDetectionError}
+            detectionIntervalMs={detectionIntervalMs}
           />
         );
       })}

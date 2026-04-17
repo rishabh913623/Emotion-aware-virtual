@@ -47,6 +47,12 @@ const EmotionChart = ({ counts, timeline = [], roomId = "" }) => {
     (left, right) => new Date(left.timestamp || left.time || 0) - new Date(right.timestamp || right.time || 0)
   );
 
+  console.log("[dashboard] chart input", {
+    roomId,
+    counts,
+    timelinePoints: normalizedTimeline.length
+  });
+
   const data = {
     labels,
     datasets: [

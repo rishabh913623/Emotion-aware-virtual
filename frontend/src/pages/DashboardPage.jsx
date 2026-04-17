@@ -8,7 +8,7 @@ import StudentEmotionTable from "../components/dashboard/StudentEmotionTable";
 import {
   getEmotionDistribution,
   getStudentStats,
-  getTrendData,
+  getEmotionTrend,
   getAverageScore,
   getEngagementLevel,
 } from "../utils/dashboardTransforms";
@@ -60,11 +60,22 @@ const DashboardPage = () => {
       });
       const rows = normalizeEmotionRows(response.data);
       const normalizedRows = [...rows].sort((left, right) => new Date(right.timestamp || 0) - new Date(left.timestamp || 0));
+      console.log("[dashboard] API response rows", normalizedRows.length, { roomId });
+
+      const nextCounts = getEmotionDistribution(normalizedRows);
+      const nextTrend = getEmotionTrend(normalizedRows);
+      const nextStudentWise = getStudentStats(normalizedRows);
+
+      console.log("[dashboard] transformed data", {
+        distribution: nextCounts,
+        trendPoints: nextTrend.length,
+        studentRows: nextStudentWise.length
+      });
 
       setHistory(normalizedRows);
-      setCounts(getEmotionDistribution(normalizedRows));
-      setRoomHistory(getTrendData(normalizedRows));
-      setStudentWise(getStudentStats(normalizedRows));
+      setCounts(nextCounts);
+      setRoomHistory(nextTrend);
+      setStudentWise(nextStudentWise);
       setError("");
     } catch (apiError) {
       setError("Failed to fetch dashboard data");

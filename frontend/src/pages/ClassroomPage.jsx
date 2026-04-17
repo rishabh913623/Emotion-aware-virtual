@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { signalingClient, aiClient, attachAuthToken } from "../api/client";
-import { createSignalingSocket } from "../api/socket";
 import { useAuth } from "../context/AuthContext";
+import { useWebRTCContext } from "../context/WebRTCContext";
 import { useWebRTC } from "../hooks/useWebRTC";
 import VideoGrid from "../components/classroom/VideoGrid";
 import ControlsBar from "../components/classroom/ControlsBar";
@@ -16,6 +16,7 @@ const ClassroomPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { auth, logout } = useAuth();
+  const { getOrCreateSocket, clearSession, keepAliveOnUnmountRef, ...webRTCSessionStore } = useWebRTCContext();
   const currentUser = auth?.user;
   const restoredRoomId = location.state?.roomId || localStorage.getItem("last_room_id") || "";
   const [roomId, setRoomId] = useState(restoredRoomId);
@@ -35,13 +36,20 @@ const ClassroomPage = () => {
   const [currentEmotion, setCurrentEmotion] = useState("Waiting");
   const [history, setHistory] = useState([]);
   const [error, setError] = useState("");
+  const [detectionIntervalMs, setDetectionIntervalMs] = useState(() => {
+    const persisted = Number(localStorage.getItem("emotion_detection_interval_ms") || 10000);
+    if ([3000, 10000, 20000].includes(persisted)) {
+      return persisted;
+    }
+    return 10000;
+  });
 
   const socket = useMemo(() => {
     if (!auth?.token) {
       return null;
     }
-    return createSignalingSocket(auth.token);
-  }, [auth?.token]);
+    return getOrCreateSocket(auth.token);
+  }, [auth?.token, getOrCreateSocket]);
 
   useEffect(() => {
     if (auth?.token) {
@@ -93,6 +101,8 @@ const ClassroomPage = () => {
     socket.on("connect_error", onSocketAuthError);
 
     socket.on("room:removed", () => {
+      keepAliveOnUnmountRef.current = false;
+      clearSession();
       setActiveRoomId("");
       alert("Instructor removed you from this room.");
     });
@@ -102,13 +112,15 @@ const ClassroomPage = () => {
     });
 
     return () => {
+      socket.off("chat:message");
       socket.off("new-quiz");
       socket.off("screen-share-started");
       socket.off("screen-share-stopped");
       socket.off("connect_error", onSocketAuthError);
-      socket.disconnect();
+      socket.off("room:removed");
+      socket.off("room:force-muted");
     };
-  }, [socket, logout, navigate, activeScreenSharer?.socketId]);
+  }, [socket, logout, navigate, activeScreenSharer?.socketId, clearSession, keepAliveOnUnmountRef]);
 
   useEffect(() => {
     if (!socket || !activeRoomId) {
@@ -161,8 +173,13 @@ const ClassroomPage = () => {
     socket,
     roomId: activeRoomId,
     enabled: Boolean(activeRoomId),
-    currentUser
+    currentUser,
+    sessionStore: webRTCSessionStore
   });
+
+  useEffect(() => {
+    localStorage.setItem("emotion_detection_interval_ms", String(detectionIntervalMs));
+  }, [detectionIntervalMs]);
 
   const handleSelfEmotionDetected = (payload) => {
     if (!payload?.emotion) {
@@ -218,6 +235,7 @@ const ClassroomPage = () => {
   const createRoom = async () => {
     const response = await signalingClient.post("/api/rooms");
     const newRoom = response.data.room.id;
+    keepAliveOnUnmountRef.current = true;
     setRoomId(newRoom);
     setActiveRoomId(newRoom);
     emitRoomJoin(newRoom);
@@ -228,6 +246,7 @@ const ClassroomPage = () => {
       return;
     }
     const selectedRoomId = roomId.trim();
+    keepAliveOnUnmountRef.current = true;
     setActiveRoomId(selectedRoomId);
     emitRoomJoin(selectedRoomId);
   };
@@ -355,6 +374,8 @@ const ClassroomPage = () => {
   };
 
   const leaveRoom = () => {
+    keepAliveOnUnmountRef.current = false;
+    clearSession();
     setActiveRoomId("");
     setMessages([]);
     localStorage.removeItem("last_room_id");
@@ -384,7 +405,10 @@ const ClassroomPage = () => {
           {currentUser.role === "instructor" && (
             <button
               className="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white"
-              onClick={() => navigate("/dashboard", { state: { roomId: activeRoomId || roomId } })}
+              onClick={() => {
+                keepAliveOnUnmountRef.current = true;
+                navigate("/dashboard", { state: { roomId: activeRoomId || roomId } });
+              }}
             >
               Dashboard
             </button>
@@ -392,6 +416,8 @@ const ClassroomPage = () => {
           <button
             className="rounded-lg border border-slate-200 px-4 py-2 text-sm"
             onClick={() => {
+                keepAliveOnUnmountRef.current = false;
+                clearSession({ disconnectSocket: true });
               logout();
               navigate("/auth");
             }}
@@ -440,11 +466,14 @@ const ClassroomPage = () => {
               enableEmotionDetection={Boolean(activeRoomId)}
               onSelfEmotionDetected={handleSelfEmotionDetected}
               onDetectionError={handleEmotionError}
+              detectionIntervalMs={detectionIntervalMs}
             />
             <ControlsBar
               audioEnabled={audioEnabled}
               videoEnabled={videoEnabled}
               sharing={sharing}
+              detectionIntervalMs={detectionIntervalMs}
+              onDetectionIntervalChange={(value) => setDetectionIntervalMs(value)}
               onToggleAudio={toggleMic}
               onToggleVideo={toggleCam}
               onShare={handleShare}

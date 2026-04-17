@@ -87,7 +87,7 @@ export const getEmotionDistribution = (rows = []) => {
   return base;
 };
 
-export const getTrendData = (rows = [], bucketMs = 60_000) => {
+export const getEmotionTrend = (rows = [], bucketMs = 60_000) => {
   const normalizedRows = normalizeRows(rows);
   const grouped = new Map();
 
@@ -120,6 +120,8 @@ export const getTrendData = (rows = [], bucketMs = 60_000) => {
     };
   });
 };
+
+export const getTrendData = (rows = [], bucketMs = 60_000) => getEmotionTrend(rows, bucketMs);
 
 export const getStudentStats = (rows = [], windowSize = 10) => {
   const normalizedRows = normalizeRows(rows);
