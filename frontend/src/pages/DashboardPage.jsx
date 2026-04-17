@@ -10,9 +10,10 @@ import StudentEmotionTable from "../components/dashboard/StudentEmotionTable";
 const mapEmotion = (emotion) => {
   const normalized = String(emotion || "").trim().toLowerCase();
   if (["engaged", "happy"].includes(normalized)) return 5;
+  if (["surprised"].includes(normalized)) return 4;
   if (normalized === "neutral") return 3;
   if (["confused", "distracted"].includes(normalized)) return 2;
-  if (["bored", "sad"].includes(normalized)) return 1;
+  if (["bored", "sad", "angry", "fearful", "disgusted"].includes(normalized)) return 1;
   return 2;
 };
 
@@ -52,14 +53,15 @@ const DashboardPage = () => {
 
   const fetchData = async () => {
     try {
-      const [aggregateResponse, roomResponse] = await Promise.all([
+      const [summaryResponse, aggregateResponse, roomResponse] = await Promise.all([
+        aiClient.get(`/emotion-data/summary?window_size=10&distribution_limit=500${roomId ? `&room_id=${encodeURIComponent(roomId)}` : ""}`),
         aiClient.get("/emotions?limit=300"),
         roomId ? aiClient.get(`/emotions/${encodeURIComponent(roomId)}?limit=300`) : Promise.resolve({ data: [] })
       ]);
 
-      setCounts(aggregateResponse.data.counts || {});
+      setCounts(summaryResponse.data.class_distribution || aggregateResponse.data.counts || {});
       setHistory(aggregateResponse.data.history || []);
-      setStudentWise(aggregateResponse.data.student_wise || []);
+      setStudentWise(summaryResponse.data.student_rolling || aggregateResponse.data.student_wise || []);
       setRoomHistory(Array.isArray(roomResponse.data) ? roomResponse.data : []);
       setError("");
     } catch (apiError) {
@@ -155,6 +157,9 @@ const DashboardPage = () => {
             {engagementLevel}
           </span>
           <p className="mt-2 text-xs text-slate-500">High: attentive class, Medium: mixed focus, Low: needs intervention.</p>
+          {(counts.Sad || 0) + (counts.Neutral || 0) > Object.values(counts).reduce((sum, value) => sum + value, 0) / 2 && (
+            <p className="mt-2 text-xs font-semibold text-rose-600">Alert: majority emotions are sad/neutral.</p>
+          )}
         </div>
 
         <EmotionChart counts={counts} timeline={timelineSource} roomId={roomId} />

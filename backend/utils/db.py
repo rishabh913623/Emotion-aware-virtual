@@ -1,5 +1,7 @@
 """Database helpers for emotion storage and retrieval."""
 import os
+from collections import defaultdict
+from datetime import datetime, timezone
 from typing import List, Dict, Any
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -51,6 +53,27 @@ def insert_emotion(user_id: int | str, room_id: str, emotion: str, confidence: f
     with get_db_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(query, (str(user_id), room_id, emotion, confidence))
+
+
+def insert_emotion_metadata(student_id: int | str, emotion: str, confidence: float, timestamp: str | None = None, room_id: str | None = None) -> None:
+    """Insert metadata-only emotion record from frontend detection."""
+    ensure_emotion_logs_table()
+
+    normalized_room = room_id or "default-room"
+    normalized_timestamp = datetime.now(timezone.utc)
+    if timestamp:
+        try:
+            normalized_timestamp = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+        except ValueError:
+            normalized_timestamp = datetime.now(timezone.utc)
+
+    query = """
+        INSERT INTO emotion_logs (user_id, room_id, emotion, confidence, timestamp)
+        VALUES (%s, %s, %s, %s, %s)
+    """
+    with get_db_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query, (str(student_id), normalized_room, emotion, float(confidence), normalized_timestamp))
 
 
 def student_exists(student_id: int) -> bool:
@@ -146,3 +169,99 @@ def fetch_emotions_by_room(room_id: str, limit: int = 500) -> List[Dict[str, Any
         with connection.cursor() as cursor:
             cursor.execute(query, (room_id, limit))
             return cursor.fetchall()
+
+
+def fetch_class_emotion_distribution(room_id: str | None = None, limit: int = 500) -> Dict[str, int]:
+    """Return class-wide emotion distribution from latest entries."""
+    ensure_emotion_logs_table()
+
+    where_clause = "WHERE room_id = %s" if room_id else ""
+    query = f"""
+        SELECT emotion, COUNT(*) AS count
+        FROM (
+            SELECT emotion
+            FROM emotion_logs
+            {where_clause}
+            ORDER BY timestamp DESC
+            LIMIT %s
+        ) AS recent
+        GROUP BY emotion
+    """
+
+    params: tuple[Any, ...] = (room_id, limit) if room_id else (limit,)
+    with get_db_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+
+    return {row["emotion"]: int(row["count"]) for row in rows}
+
+
+def fetch_student_rolling_averages(room_id: str | None = None, window_size: int = 10) -> List[Dict[str, Any]]:
+    """Return rolling average emotion score per student from recent N entries."""
+    ensure_emotion_logs_table()
+
+    where_clause = "WHERE room_id = %s" if room_id else ""
+    query = f"""
+        SELECT user_id AS student_id, room_id, emotion, confidence, timestamp
+        FROM emotion_logs
+        {where_clause}
+        ORDER BY timestamp DESC
+        LIMIT %s
+    """
+
+    sample_limit = max(window_size * 200, 200)
+    params: tuple[Any, ...] = (room_id, sample_limit) if room_id else (sample_limit,)
+    with get_db_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+
+    emotion_score_map = {
+        "engaged": 5,
+        "happy": 5,
+        "neutral": 3,
+        "confused": 2,
+        "distracted": 2,
+        "bored": 1,
+        "sad": 1,
+    }
+
+    grouped: dict[str, list[Dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        student_id = str(row.get("student_id") or "")
+        if not student_id:
+            continue
+        if len(grouped[student_id]) < window_size:
+            grouped[student_id].append(row)
+
+    response: list[Dict[str, Any]] = []
+    for student_id, entries in grouped.items():
+        if not entries:
+            continue
+
+        score_sum = 0.0
+        confidence_sum = 0.0
+        dominant_counter: dict[str, int] = defaultdict(int)
+        latest_timestamp = entries[0].get("timestamp")
+
+        for entry in entries:
+            emotion = str(entry.get("emotion") or "Unknown")
+            score_sum += emotion_score_map.get(emotion.lower(), 2)
+            confidence_sum += float(entry.get("confidence") or 0)
+            dominant_counter[emotion] += 1
+
+        dominant_emotion = max(dominant_counter.items(), key=lambda pair: pair[1])[0]
+        response.append(
+            {
+                "student_id": student_id,
+                "samples": len(entries),
+                "rolling_average_score": round(score_sum / len(entries), 3),
+                "average_confidence": round(confidence_sum / len(entries), 4),
+                "dominant_emotion": dominant_emotion,
+                "last_updated": latest_timestamp,
+            }
+        )
+
+    response.sort(key=lambda item: item["student_id"])
+    return response

@@ -2,7 +2,6 @@
 from datetime import datetime, timezone
 from collections import Counter, defaultdict, deque
 import logging
-import random
 from flask import Blueprint, request, jsonify
 import numpy as np
 import cv2
@@ -16,7 +15,6 @@ predict_bp = Blueprint("predict", __name__)
 logger = logging.getLogger(__name__)
 
 EMOTION_CLASSES = ["Engaged", "Confused", "Bored", "Distracted", "Neutral"]
-FALLBACK_EMOTIONS = ["Happy", "Neutral", "Sad"]
 CONFIDENCE_THRESHOLD = 0.6
 MAJORITY_WINDOW = 3
 prediction_windows: dict[int, deque[str]] = defaultdict(lambda: deque(maxlen=MAJORITY_WINDOW))
@@ -62,8 +60,8 @@ def majority_vote(student_id: int, emotion: str) -> str:
 
 
 def fallback_emotion() -> str:
-    """Return a demo-safe fallback emotion when live inference is unavailable."""
-    return random.choice(FALLBACK_EMOTIONS)
+    """Return unavailable marker when inference cannot produce a real result."""
+    return "Unavailable"
 
 
 @predict_bp.route("/predict", methods=["POST"])
@@ -150,7 +148,7 @@ def predict_emotion():
         if not emotion:
             emotion = fallback_emotion()
             raw_emotion = raw_emotion or emotion
-            confidence = max(confidence, 0.65)
+            confidence = 0.0
             predictions_map = predictions_map or {emotion: confidence}
             emotion = majority_vote(student_id, emotion)
         else:

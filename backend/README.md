@@ -38,15 +38,16 @@ python app.py
 ## API Endpoints
 
 - `POST /predict` (multipart form-data: `image`, optional `student_id`) or JSON with `image_base64`
+- `POST /emotion-data` (JSON metadata only: `student_id`, `emotion`, `confidence`, `timestamp`, `room_id`)
+- `GET /emotion-data/summary?room_id=<id>&window_size=10&distribution_limit=500`
+- `GET /emotion-data/student/<student_id>?room_id=<id>&limit=30`
 - `GET /emotions?limit=200`
+- `GET /emotions/<room_id>?limit=300`
 - `GET /generate-quiz?student_id=1`
 
 ## Notes
 
 - Place your trained CNN model at `../model/emotion_model.h5` or set `MODEL_PATH`.
 - Uses OpenCV Haar cascade for face detection before inference.
-- Anti-fake logic:
-	- No face -> returns `No Face`
-	- Confidence threshold: `> 0.6`
-	- Rolling majority vote over last 3 predictions
-- Uses Socket.IO for real-time emotion updates (`emotion_update`).
+- Emotion metadata APIs do not store images/videos (privacy-safe).
+- Uses Socket.IO for real-time emotion updates (`emotion_update`) for dashboard refresh.

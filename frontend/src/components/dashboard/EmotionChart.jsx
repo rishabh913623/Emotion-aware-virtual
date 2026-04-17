@@ -18,8 +18,16 @@ const EMOTION_SCORE_MAP = {
   Engaged: 5,
   Happy: 5,
   happy: 5,
+  Surprised: 4,
+  surprised: 4,
   Neutral: 3,
   neutral: 3,
+  Angry: 1,
+  angry: 1,
+  Fearful: 1,
+  fearful: 1,
+  Disgusted: 1,
+  disgusted: 1,
   Confused: 2,
   confused: 2,
   Distracted: 2,
@@ -34,7 +42,7 @@ const EMOTION_SCORE_MAP = {
 };
 
 const EmotionChart = ({ counts, timeline = [], roomId = "" }) => {
-  const labels = ["Engaged", "Happy", "Neutral", "Confused", "Distracted", "Bored", "Sad"];
+  const labels = ["Happy", "Neutral", "Sad", "Angry", "Fearful", "Disgusted", "Surprised"];
   const normalizedTimeline = [...timeline].sort(
     (left, right) => new Date(left.timestamp || left.time || 0) - new Date(right.timestamp || right.time || 0)
   );

@@ -5,7 +5,6 @@ import { signalingClient, aiClient, attachAuthToken } from "../api/client";
 import { createSignalingSocket } from "../api/socket";
 import { useAuth } from "../context/AuthContext";
 import { useWebRTC } from "../hooks/useWebRTC";
-import { useEmotionCapture } from "../hooks/useEmotionCapture";
 import VideoGrid from "../components/classroom/VideoGrid";
 import ControlsBar from "../components/classroom/ControlsBar";
 import ChatSidebar from "../components/classroom/ChatSidebar";
@@ -33,6 +32,9 @@ const ClassroomPage = () => {
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [quizScore, setQuizScore] = useState(0);
   const [quizStatus, setQuizStatus] = useState("");
+  const [currentEmotion, setCurrentEmotion] = useState("Waiting");
+  const [history, setHistory] = useState([]);
+  const [error, setError] = useState("");
 
   const socket = useMemo(() => {
     if (!auth?.token) {
@@ -162,12 +164,29 @@ const ClassroomPage = () => {
     currentUser
   });
 
-  const { currentEmotion, history, error } = useEmotionCapture({
-    enabled: Boolean(activeRoomId) && currentUser?.role === "student",
-    userId: currentUser?.id,
-    roomId: activeRoomId,
-    videoRef: localVideoRef
-  });
+  const handleSelfEmotionDetected = (payload) => {
+    if (!payload?.emotion) {
+      return;
+    }
+
+    setCurrentEmotion(payload.emotion);
+    setHistory((prev) => [
+      {
+        emotion: payload.emotion,
+        confidence: payload.confidence,
+        timestamp: new Date(payload.timestamp).toLocaleTimeString()
+      },
+      ...prev
+    ].slice(0, 20));
+    setError("");
+  };
+
+  const handleEmotionError = (message) => {
+    if (!message) {
+      return;
+    }
+    setError(message);
+  };
 
   const emitRoomJoin = (targetRoomId) => {
     if (!socket || !targetRoomId) {
@@ -415,7 +434,12 @@ const ClassroomPage = () => {
               participants={participants}
               selfName={currentUser.name}
               selfSocketId={socket?.id}
+              selfStudentId={currentUser.id}
+              roomId={activeRoomId}
               screenSharer={screenSharer}
+              enableEmotionDetection={Boolean(activeRoomId)}
+              onSelfEmotionDetected={handleSelfEmotionDetected}
+              onDetectionError={handleEmotionError}
             />
             <ControlsBar
               audioEnabled={audioEnabled}

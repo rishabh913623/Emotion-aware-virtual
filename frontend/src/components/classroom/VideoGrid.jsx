@@ -1,46 +1,19 @@
 import React from "react";
+import EmotionVideoTile from "./EmotionVideoTile";
 
-const RemoteVideo = ({ stream, label, videoClassName = "h-40 w-full rounded-lg object-cover", containerClassName = "rounded-xl bg-slate-900 p-2" }) => {
-  const ref = React.useRef(null);
-
-  React.useEffect(() => {
-    if (ref.current && stream) {
-      ref.current.srcObject = stream;
-      ref.current.play().catch(() => {});
-    }
-  }, [stream]);
-
-  return (
-    <div className={containerClassName}>
-      {stream ? (
-        <video ref={ref} autoPlay playsInline className={videoClassName} />
-      ) : (
-        <div className="flex h-40 w-full items-center justify-center rounded-lg bg-slate-800 text-xs text-slate-300">
-          Connecting video...
-        </div>
-      )}
-      <p className="mt-2 text-xs text-slate-300">{label}</p>
-    </div>
-  );
-};
-
-const LocalVideo = ({ localVideoRef, selfName }) => {
-  return (
-    <div className="rounded-xl bg-blue-950 p-2">
-      <video
-        ref={localVideoRef}
-        autoPlay
-        muted
-        playsInline
-        className="h-40 w-full rounded-lg object-cover"
-        onLoadedMetadata={(event) => event.currentTarget.play().catch(() => {})}
-      />
-      <p className="mt-2 text-xs text-blue-100">{selfName} (You)</p>
-    </div>
-  );
-};
-
-const VideoGrid = ({ localVideoRef, remoteStreams, participants, selfName, selfSocketId, screenSharer }) => {
+const VideoGrid = ({
+  localVideoRef,
+  remoteStreams,
+  participants,
+  selfName,
+  selfSocketId,
+  selfStudentId,
+  roomId,
+  screenSharer,
+  enableEmotionDetection,
+  onSelfEmotionDetected,
+  onDetectionError,
+}) => {
   const participantMap = new Map(
     participants
       .filter((participant) => participant.socketId !== selfSocketId)
@@ -71,19 +44,28 @@ const VideoGrid = ({ localVideoRef, remoteStreams, participants, selfName, selfS
         <div className="w-full xl:w-3/4">
           <div className="rounded-xl bg-slate-900 p-2">
             {mainIsSelf ? (
-              <video
-                ref={localVideoRef}
-                autoPlay
+              <EmotionVideoTile
+                videoRef={localVideoRef}
+                label={screenSharer?.name || `${selfName} (You)`}
+                studentId={selfStudentId}
+                roomId={roomId}
                 muted
-                playsInline
-                className="h-[26rem] w-full rounded-lg object-contain bg-black"
-                onLoadedMetadata={(event) => event.currentTarget.play().catch(() => {})}
+                enableDetection={enableEmotionDetection}
+                onDetection={onSelfEmotionDetected}
+                onError={onDetectionError}
+                videoClassName="h-[26rem] w-full rounded-lg object-contain bg-black"
+                containerClassName="rounded-xl bg-slate-900 p-0"
               />
             ) : mainStream ? (
-              <RemoteVideo
+              <EmotionVideoTile
                 stream={mainStream}
                 label={screenSharer?.name || `Participant ${screenSharerSocketId?.slice(0, 4)}`}
+                studentId={screenSharer?.userId || screenSharerSocketId}
+                roomId={roomId}
+                enableDetection={enableEmotionDetection}
+                onError={onDetectionError}
                 videoClassName="h-[26rem] w-full rounded-lg object-contain bg-black"
+                containerClassName="rounded-xl bg-slate-900 p-0"
               />
             ) : (
               <div className="flex h-[26rem] w-full items-center justify-center rounded-lg bg-slate-800 text-xs text-slate-300">
@@ -99,15 +81,32 @@ const VideoGrid = ({ localVideoRef, remoteStreams, participants, selfName, selfS
         <div className="grid w-full grid-cols-2 gap-3 xl:w-1/4 xl:grid-cols-1">
           {sidebarParticipants.map((participant) => {
             if (participant.isSelf) {
-              return <LocalVideo key="self-tile" localVideoRef={localVideoRef} selfName={selfName} />;
+              return (
+                <EmotionVideoTile
+                  key="self-tile"
+                  videoRef={localVideoRef}
+                  label={`${selfName} (You)`}
+                  studentId={selfStudentId}
+                  roomId={roomId}
+                  muted
+                  enableDetection={enableEmotionDetection}
+                  onDetection={onSelfEmotionDetected}
+                  onError={onDetectionError}
+                  containerClassName="rounded-xl bg-blue-950 p-2"
+                />
+              );
             }
 
             const stream = remoteStreams[participant.socketId];
             return (
-              <RemoteVideo
+              <EmotionVideoTile
                 key={participant.socketId}
                 stream={stream}
                 label={participant?.name || `Participant ${participant.socketId.slice(0, 4)}`}
+                studentId={participant?.userId || participant.socketId}
+                roomId={roomId}
+                enableDetection={enableEmotionDetection}
+                onError={onDetectionError}
               />
             );
           })}
@@ -118,15 +117,29 @@ const VideoGrid = ({ localVideoRef, remoteStreams, participants, selfName, selfS
 
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-      <LocalVideo localVideoRef={localVideoRef} selfName={selfName} />
+      <EmotionVideoTile
+        videoRef={localVideoRef}
+        label={`${selfName} (You)`}
+        studentId={selfStudentId}
+        roomId={roomId}
+        muted
+        enableDetection={enableEmotionDetection}
+        onDetection={onSelfEmotionDetected}
+        onError={onDetectionError}
+        containerClassName="rounded-xl bg-blue-950 p-2"
+      />
 
       {remoteParticipants.map((participant) => {
         const stream = remoteStreams[participant.socketId];
         return (
-          <RemoteVideo
+          <EmotionVideoTile
             key={participant.socketId}
             stream={stream}
             label={participant?.name || `Participant ${participant.socketId.slice(0, 4)}`}
+            studentId={participant?.userId || participant.socketId}
+            roomId={roomId}
+            enableDetection={enableEmotionDetection}
+            onError={onDetectionError}
           />
         );
       })}
